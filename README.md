@@ -1,6 +1,6 @@
 # mcp-server-log-hub
 
-> **Unified Model Context Protocol (MCP) server for multi-provider log observability (Seq, Observe, and beyond).**
+> **Model Context Protocol (MCP) server for Seq and OpenObserve log search.**
 
 Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat, and seamless integration as either a **standalone MCP server** or a **child feature inside a Master MCP Orchestrator**.
 
@@ -8,7 +8,7 @@ Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat,
 
 ## 🌟 Key Highlights
 
-- **Multi-Provider Hub**: Query logs across **Seq** and **Observe (OBS)** through a single unified interface, or query backends individually.
+- **Multi-Provider Hub**: Query logs from **Seq** and **OpenObserve** through a unified interface.
 - **Dual-Mode Architecture**:
   - **Standalone Mode**: Runs over stdio JSON-RPC or interactive terminal CLI.
   - **Parent MCP Integration**: Can be mounted in-process into a Master MCP orchestrator via `registerLogHubTools()` with custom namespaces.
@@ -31,20 +31,7 @@ npm run build
 ```
 
 ### 2. Configure Credentials
-Copy `.env.example` to `.env` and set your credentials:
-```bash
-cp .env.example .env
-```
-Edit `.env`:
-```env
-# Seq Configuration
-SEQ_SERVER_URL=http://localhost:5341
-SEQ_API_KEY=your_seq_api_key_here
-
-# Observe Configuration
-OBSERVE_CUSTOMER_ID=your_customer_id
-OBSERVE_TOKEN=your_observe_token
-```
+Keep a separate logging account for each provider. Edit `config/seq.env` and `config/openobserve.env` with your account credentials; tracked `.env.example` files show the expected variables. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
 
 ### 3. Verify Health & Test Interactively
 Run the interactive CLI menu:
@@ -71,8 +58,9 @@ Add `mcp-server-log-hub` to your `claude_desktop_config.json` or Antigravity MCP
       "env": {
         "SEQ_SERVER_URL": "http://localhost:5341",
         "SEQ_API_KEY": "your_api_key",
-        "OBSERVE_CUSTOMER_ID": "your_customer_id",
-        "OBSERVE_TOKEN": "your_token"
+        "OPENOBSERVE_URL": "https://your-openobserve-instance.example:10443",
+        "OPENOBSERVE_EMAIL": "logging-reader@example.com",
+        "OPENOBSERVE_TOKEN": "your_service_account_token"
       }
     }
   }
@@ -107,6 +95,7 @@ See [docs/PARENT_MCP_GUIDE.md](docs/PARENT_MCP_GUIDE.md) for full instructions a
 - [docs/STANDARDS.md](docs/STANDARDS.md) - Coding standards, type normalization, and error handling.
 - [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) - Complete package catalog and architectural justification.
 - [docs/CLI_GUIDE.md](docs/CLI_GUIDE.md) - CLI menu walkthrough and preflight troubleshooting.
+- [docs/OPENOBSERVE_GUIDE.md](docs/OPENOBSERVE_GUIDE.md) - OpenObserve account, token, Organization, stream, and search setup.
 
 ---
 

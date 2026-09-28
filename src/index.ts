@@ -8,7 +8,7 @@ import { logger } from './utils/logger.js';
 // Library exports for Master / Router MCP integration
 export { registerLogHubTools, type RegisterToolsOptions } from './tools.js';
 export { LogHubService, defaultLogHubService } from './service.js';
-export { getProvider, getAllProviders, listProviders } from './providers/index.js';
+export { getProvider, getAllProviders, listProviders, openObserveProvider } from './providers/index.js';
 export { runPreflightChecks, type PreflightResult } from './utils/preflight.js';
 export { logger } from './utils/logger.js';
 export * from './types.js';

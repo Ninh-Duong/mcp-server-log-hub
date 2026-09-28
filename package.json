@@ -1,7 +1,7 @@
 {
   "name": "mcp-server-log-hub",
   "version": "1.0.0",
-  "description": "Unified Model Context Protocol (MCP) server for multi-provider log observability (Seq, Observe)",
+  "description": "Unified MCP server for Seq and OpenObserve log search",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,6 +16,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test dist/tests/*.test.js",
     "start": "node dist/index.js",
     "cli": "node dist/index.js --cli",
     "preflight": "node dist/index.js --preflight",
@@ -38,7 +39,7 @@
     "logging",
     "observability",
     "seq",
-    "observe"
+    "openobserve"
   ],
   "author": "",
   "license": "MIT"

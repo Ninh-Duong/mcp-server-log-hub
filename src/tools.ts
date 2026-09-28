@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { LogHubService, defaultLogHubService } from './service.js';
 import { LogLevel } from './types.js';
+import { openObserveProvider } from './providers/index.js';
 
 export interface RegisterToolsOptions {
   /** Optional prefix for tool names (useful when mounted inside a Master MCP, e.g. "log_hub_") */
@@ -21,7 +22,7 @@ export function registerLogHubTools(server: McpServer, options: RegisterToolsOpt
   // 1. Tool: list_log_providers
   server.tool(
     `${prefix}list_log_providers`,
-    'List all supported log providers (Seq, Observe) and their configuration/connection status.',
+    'List supported log providers (Seq, OpenObserve) and their configuration status. This does not verify a network connection.',
     {},
     async () => {
       const providers = service.listProviders();
@@ -46,16 +47,18 @@ export function registerLogHubTools(server: McpServer, options: RegisterToolsOpt
   // 2. Tool: query_logs
   server.tool(
     `${prefix}query_logs`,
-    'Query logs across one or all configured log backends (Seq, Observe). Supports filter text, time bounds, severity level, and limit.',
+    'Query logs from Seq or OpenObserve. OpenObserve requires organization and either stream or SQL query.',
     {
       provider: z
         .string()
         .optional()
-        .describe("Specific provider to query ('seq' or 'observe'). Omit to broadcast across all configured backends."),
+        .describe("Specific provider to query ('seq' or 'openobserve')."),
+      organization: z.string().optional().describe('OpenObserve organization identifier.'),
+      stream: z.string().optional().describe('OpenObserve log stream.'),
       query: z
         .string()
         .optional()
-        .describe("Search text or native query syntax (Seq filter syntax or Observe OPAL)."),
+        .describe('Seq filter expression or OpenObserve SQL.'),
       from: z
         .string()
         .optional()
@@ -81,6 +84,8 @@ export function registerLogHubTools(server: McpServer, options: RegisterToolsOpt
       try {
         const logs = await service.queryLogs({
           provider: args.provider,
+          organization: args.organization,
+          stream: args.stream,
           query: args.query,
           from: args.from,
           to: args.to,
@@ -118,4 +123,49 @@ export function registerLogHubTools(server: McpServer, options: RegisterToolsOpt
       }
     }
   );
+
+  server.tool(`${prefix}list_openobserve_organizations`, 'Connect to OpenObserve and list organizations accessible to its configured logging account.', {}, async () => {
+    try {
+      const organizations = await openObserveProvider.listOrganizations();
+      return { content: [{ type: 'text', text: JSON.stringify({ organizations }) }] };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: (err as Error).message }] };
+    }
+  });
+
+  server.tool(`${prefix}list_openobserve_streams`, 'List log streams in an accessible OpenObserve organization.', {
+    organization: z.string().min(1),
+  }, async ({ organization }) => {
+    try {
+      const streams = await openObserveProvider.listStreams(organization);
+      return { content: [{ type: 'text', text: JSON.stringify({ organization, streams }) }] };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: (err as Error).message }] };
+    }
+  });
+
+  server.tool(`${prefix}find_openobserve_logs_by_rcid`, 'Find OpenObserve logs with an exact RCID in one accessible log stream.', {
+    organization: z.string().min(1), stream: z.string().min(1), rcid: z.string().min(1),
+    field: z.string().min(1).default('rcid').describe('Name of the RCID field in the stream.'),
+    from: z.string().default('15m'), to: z.string().optional(), limit: z.number().int().min(1).max(500).default(50),
+  }, async (args) => {
+    try {
+      const logs = await openObserveProvider.findByRcid(args);
+      return { content: [{ type: 'text', text: JSON.stringify({ total: logs.length, logs }) }] };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: (err as Error).message }] };
+    }
+  });
+
+  server.tool(`${prefix}search_openobserve_logs`, 'Run a bounded SQL search within an accessible OpenObserve organization.', {
+    organization: z.string().min(1), sql: z.string().min(1),
+    from: z.string().default('15m'), to: z.string().optional(), limit: z.number().int().min(1).max(500).default(50),
+  }, async (args) => {
+    try {
+      const logs = await openObserveProvider.searchLogs(args);
+      return { content: [{ type: 'text', text: JSON.stringify({ total: logs.length, logs }) }] };
+    } catch (err) {
+      return { isError: true, content: [{ type: 'text', text: (err as Error).message }] };
+    }
+  });
 }

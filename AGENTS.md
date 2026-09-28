@@ -32,8 +32,8 @@
 
 When instructed to add support for a new log provider (e.g., Loki, Datadog, Elasticsearch, CloudWatch):
 
-### Step 1: Define Environment Variables in `.env.example`
-Add connection variables (e.g., `LOKI_HOST`, `LOKI_USER`, `LOKI_TOKEN`).
+### Step 1: Define Environment Variables in a provider account example
+Add connection variables in `config/<provider>.env.example` and load them from `config/<provider>.env`.
 
 ### Step 2: Implement the Provider Class in `src/providers/<provider>.ts`
 Implement the `LogProvider` interface:
@@ -68,18 +68,22 @@ this.register(new NewProvider());
 ## 4. MCP Tools Reference
 
 ### Tool: `list_log_providers`
-- **Purpose**: Lists all known log backends, whether their credentials are configured in `.env`, and endpoint URLs.
+- **Purpose**: Lists all known log backends, whether their credentials are configured, and endpoint URLs.
 - **Parameters**: None.
 
 ### Tool: `query_logs`
 - **Purpose**: Retrieves logs with filtering, time range bounding, and level filtering.
 - **Parameters**:
-  - `provider` *(optional string)*: `'seq'`, `'observe'`, or omit for all configured.
+  - `provider` *(optional string)*: `'seq'`, `'openobserve'`, or omit for compatible configured backends.
+  - `organization` *(optional string)*: OpenObserve Organization identifier; required for OpenObserve queries.
+  - `stream` *(optional string)*: OpenObserve log stream when `query` is omitted.
   - `query` *(optional string)*: Search text or native filter expression.
   - `from` *(optional string)*: ISO timestamp or `'15m'`, `'1h'`, `'24h'`, `'7d'`.
   - `to` *(optional string)*: ISO timestamp.
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
   - `level` *(optional string)*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`.
+
+OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
 
 ---
 

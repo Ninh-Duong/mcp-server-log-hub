@@ -1,13 +1,15 @@
 import { LogProvider, ProviderStatus } from '../types.js';
 import { SeqProvider } from './seq.js';
-import { ObserveProvider } from './observe.js';
+import { OpenObserveProvider } from './openobserve.js';
+
+export const openObserveProvider = new OpenObserveProvider();
 
 class ProviderRegistry {
   private providers: Map<string, LogProvider> = new Map();
 
   constructor() {
     this.register(new SeqProvider());
-    this.register(new ObserveProvider());
+    this.register(openObserveProvider);
   }
 
   public register(provider: LogProvider): void {
@@ -15,7 +17,8 @@ class ProviderRegistry {
   }
 
   public get(name: string): LogProvider | undefined {
-    return this.providers.get(name.toLowerCase());
+    const key = name.toLowerCase();
+    return this.providers.get(key === 'observe' ? 'openobserve' : key);
   }
 
   public getAll(): LogProvider[] {

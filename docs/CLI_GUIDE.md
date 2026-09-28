@@ -33,12 +33,13 @@ Unified multi-provider log observability for AI Agents & Humans
 [MENU OPTIONS]
   1. Run Environment Preflight Diagnostics
   2. List Supported Log Providers & Status
-  3. Execute Live Test Query
+  3. Execute Seq Live Test Query
   4. View Recent Process Logs (logs/mcp-process.log)
-  5. Launch MCP Server in Stdio Mode
-  6. Exit
+  5. OpenObserve Log Processing
+  6. Launch MCP Server in Stdio Mode
+  7. Exit
 --------------------------------------------------------
-Select an option (1-6):
+Select an option (1-7):
 ```
 
 ### Option 1: Run Environment Preflight Diagnostics
@@ -46,14 +47,13 @@ Runs automated checks:
 - **Node.js Runtime**: Confirms Node version is >= 18.0.0.
 - **Logs Storage**: Verifies write permissions on `logs/`.
 - **MCP SDK & Core Modules**: Verifies protocol bindings.
-- **Provider Credentials**: Checks presence of `SEQ_SERVER_URL`, `SEQ_API_KEY`, `OBSERVE_CUSTOMER_ID`, `OBSERVE_TOKEN`.
+- **Provider Credentials**: Checks presence of Seq and OpenObserve account variables from `config/*.env`.
 
 ### Option 2: List Supported Log Providers & Status
-Displays the connection status of each registered log provider (`[READY]` or `[UNCONFIGURED]`).
+Displays whether each provider has credentials (`[CONFIGURED]` or `[UNCONFIGURED]`). OpenObserve menu option 5 verifies the actual connection.
 
-### Option 3: Execute Live Test Query
+### Option 3: Execute Seq Live Test Query
 Prompts you for:
-- Target Provider (`seq`, `observe`, or blank for all)
 - Query text (e.g. `Error`, `Timeout`, `*`)
 - Result limit (default: 10)
 Directly queries the selected backend and renders output in the terminal.
@@ -61,7 +61,10 @@ Directly queries the selected backend and renders output in the terminal.
 ### Option 4: View Recent Process Logs
 Prints the last 25 lines from `logs/mcp-process.log` without leaving the terminal.
 
-### Option 5: Launch MCP Server in Stdio Mode
+### Option 5: OpenObserve Log Processing
+Connects using `config/openobserve.env`, lists accessible Organizations and log streams, then searches by RCID or SQL. See [OpenObserve guide](OPENOBSERVE_GUIDE.md).
+
+### Option 6: Launch MCP Server in Stdio Mode
 Transitions from interactive mode into headless JSON-RPC stdio transport mode.
 
 ---
@@ -70,6 +73,6 @@ Transitions from interactive mode into headless JSON-RPC stdio transport mode.
 
 | Symptom | Root Cause | Solution |
 | :--- | :--- | :--- |
-| `[WARN] Seq Provider: Unconfigured` | `SEQ_SERVER_URL` or `SEQ_API_KEY` is missing in `.env` | Copy `.env.example` to `.env` and fill in your Seq server URL and API key. |
-| `[WARN] Observe Provider: Unconfigured` | `OBSERVE_CUSTOMER_ID` or `OBSERVE_TOKEN` is missing | Set customer ID and bearer token in `.env`. |
+| `[WARN] Seq Provider: Unconfigured` | `SEQ_SERVER_URL` or `SEQ_API_KEY` is missing | Fill in `config/seq.env`. |
+| `[WARN] OpenObserve Provider: Unconfigured` | OpenObserve URL, email, or token is missing | Fill in `config/openobserve.env`. |
 | `[FAIL] Logs Storage: Cannot write` | Permissions issue on `logs/` folder | Ensure current user has write permissions in the repo directory. |

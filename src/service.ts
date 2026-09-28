@@ -30,7 +30,7 @@ export class LogHubService {
     }
 
     // Multi-provider query across all configured backends
-    const configuredProviders = getAllProviders().filter((p) => p.getStatus().configured);
+    const configuredProviders = getAllProviders().filter((p) => p.getStatus().configured && (p.name !== 'openobserve' || (params.organization && (params.query || params.stream))));
     if (configuredProviders.length === 0) {
       logger.warn('No log providers are currently configured with valid credentials.');
       return [];

@@ -10,8 +10,8 @@ export const LOGS_DIR = resolve(PROJECT_ROOT, process.env.LOG_DIR || 'logs');
 /**
  * Lightweight stdlib .env parser (avoids external dotenv dependency)
  */
-function loadEnvFile(): void {
-  const envPath = resolve(PROJECT_ROOT, '.env');
+function loadEnvFile(file: string): void {
+  const envPath = resolve(PROJECT_ROOT, file);
   if (!existsSync(envPath)) return;
 
   try {
@@ -36,7 +36,9 @@ function loadEnvFile(): void {
 }
 
 // Load .env on initial import
-loadEnvFile();
+loadEnvFile('config/seq.env');
+loadEnvFile('config/openobserve.env');
+loadEnvFile('.env');
 
 export const config = {
   server: {
@@ -47,9 +49,9 @@ export const config = {
     serverUrl: (process.env.SEQ_SERVER_URL || '').replace(/\/+$/, ''),
     apiKey: process.env.SEQ_API_KEY || '',
   },
-  observe: {
-    customerId: process.env.OBSERVE_CUSTOMER_ID || '',
-    token: process.env.OBSERVE_TOKEN || '',
-    domain: process.env.OBSERVE_DOMAIN || 'observeinc.com',
+  openobserve: {
+    url: (process.env.OPENOBSERVE_URL || '').replace(/\/+$/, ''),
+    email: process.env.OPENOBSERVE_EMAIL || '',
+    token: process.env.OPENOBSERVE_TOKEN || '',
   },
 };

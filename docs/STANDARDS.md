@@ -9,14 +9,14 @@
 
 ## 2. Standardized Log Schema
 
-Regardless of whether logs originate from Seq, Observe, or future providers, they MUST normalize into the unified `LogEntry` interface:
+Regardless of whether logs originate from Seq, OpenObserve, or future providers, they MUST normalize into the unified `LogEntry` interface:
 
 ```typescript
 export interface LogEntry {
   timestamp: string;                      // ISO 8601 UTC (e.g. 2026-09-28T05:00:00.000Z)
   level: LogLevel | string;               // Normalized severity level
   message: string;                        // Rendered, human-readable log message
-  provider: string;                       // Backend name ('seq', 'observe')
+  provider: string;                       // Backend name ('seq', 'openobserve')
   metadata?: Record<string, unknown>;    // Optional key-value context attributes
 }
 ```

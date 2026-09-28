@@ -15,6 +15,10 @@ export interface LogQuery {
   limit?: number;
   /** Minimum log severity level */
   level?: LogLevel;
+  /** OpenObserve organization identifier */
+  organization?: string;
+  /** OpenObserve log stream */
+  stream?: string;
 }
 
 export interface LogEntry {
@@ -24,7 +28,7 @@ export interface LogEntry {
   level: LogLevel | string;
   /** Rendered human-readable log message */
   message: string;
-  /** Identifier of the provider that produced this log (e.g. 'seq', 'observe') */
+  /** Identifier of the provider that produced this log (e.g. 'seq', 'openobserve') */
   provider: string;
   /** Raw or structured contextual properties */
   metadata?: Record<string, unknown>;

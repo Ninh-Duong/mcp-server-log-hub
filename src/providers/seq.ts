@@ -18,7 +18,7 @@ export class SeqProvider implements LogProvider {
       endpoint: config.seq.serverUrl || undefined,
       missingVariables: missing.length ? missing : undefined,
       details: configured
-        ? `Connected to Seq server at ${config.seq.serverUrl}`
+        ? `Configured for Seq server at ${config.seq.serverUrl} (connection not verified)`
         : `Seq is unconfigured (${missing.join(', ')} missing)`,
     };
   }

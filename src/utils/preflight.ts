@@ -85,22 +85,22 @@ export function runPreflightChecks(logToConsole: boolean = false): PreflightResu
     items.push({
       name: 'Seq Provider',
       status: 'WARN',
-      message: 'Unconfigured (SEQ_SERVER_URL not set in .env).',
+      message: 'Unconfigured (SEQ_SERVER_URL not set in config/seq.env).',
     });
   }
 
-  // 5. Observe Provider credentials check
-  if (config.observe.customerId && config.observe.token) {
+  // 5. OpenObserve Provider credentials check
+  if (config.openobserve.url && config.openobserve.email && config.openobserve.token) {
     items.push({
-      name: 'Observe Provider',
+      name: 'OpenObserve Provider',
       status: 'PASS',
-      message: `Configured for customer ${config.observe.customerId} on ${config.observe.domain}`,
+      message: `Credentials configured for ${config.openobserve.url} (connection not verified)`,
     });
   } else {
     items.push({
-      name: 'Observe Provider',
+      name: 'OpenObserve Provider',
       status: 'WARN',
-      message: 'Unconfigured (OBSERVE_CUSTOMER_ID or OBSERVE_TOKEN missing).',
+      message: 'Unconfigured (OPENOBSERVE_URL, OPENOBSERVE_EMAIL or OPENOBSERVE_TOKEN missing).',
     });
   }
 

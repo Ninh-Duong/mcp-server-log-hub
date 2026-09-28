@@ -23,7 +23,7 @@ flowchart TD
 
     subgraph Providers["Log Backends"]
         SeqAPI["Seq REST API\n(/api/events)"]
-        ObserveAPI["Observe API / OPAL\n(/v1/query)"]
+        ObserveAPI["OpenObserve API / SQL\n(/api/{org}/_search)"]
         FutureAPI["Future Providers\n(Loki, Datadog, etc.)"]
     end
 
@@ -73,7 +73,7 @@ export interface LogProvider {
   queryLogs(params: LogQuery): Promise<LogEntry[]>;
 }
 ```
-Each provider encapsulates its own authentication, endpoint URL structure, native query translation, and pagination.
+Each provider encapsulates its own authentication, endpoint URL structure, and native query format. OpenObserve also discovers accessible Organizations and log streams.
 
 ---
 
