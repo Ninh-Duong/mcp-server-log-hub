@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+*.tsbuildinfo
+
+# Runtime Logs & Diagnostic Data
+logs/*
+!logs/.gitkeep
+*.log
+*.tmp
+*.temp
+
+# Scanned / Cached Data
+.cache/
+data/
+*.dump
+*.jsonl
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+.idea/
