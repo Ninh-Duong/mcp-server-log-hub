@@ -30,6 +30,8 @@ registerLogHubTools(masterServer, {
   prefix: 'logs_', // Tools will be registered as 'logs_list_log_providers' and 'logs_query_logs'
 });
 
+`registerLogHubTools` also registers the `logs_investigate_api_bug` MCP Prompt and prefixed OpenObserve schema/search tools. Agents can start with that prompt and follow its tool workflow.
+
 // 3. Mount your other child features (e.g. database tools, metrics, deployment)
 // registerDatabaseTools(masterServer);
 // registerDeploymentTools(masterServer);

@@ -14,11 +14,11 @@ flowchart TD
 
     subgraph CoreHub["mcp-server-log-hub"]
         Router["CLI & MCP Transport Router\n(src/index.ts)"]
-        Tools["MCP Tools: list_log_providers, query_logs\n(src/tools.ts)"]
+        Tools["MCP Tools and Prompts: search, schema, bug investigation\n(src/tools.ts)"]
         Service["Log Hub Service\n(src/service.ts)"]
         Registry["Provider Registry\n(src/providers/index.ts)"]
         Preflight["Startup Preflight Diagnostics\n(src/utils/preflight.ts)"]
-        Logger["File & Stderr Logger\n(src/utils/logger.ts)"]
+        Logger["Provider request lifecycle diagnostics\n(src/utils/logger.ts)"]
     end
 
     subgraph Providers["Log Backends"]
@@ -46,6 +46,8 @@ flowchart TD
     Router --> Logger
     Logger --> LogFile
 ```
+
+The `investigate_api_bug` MCP Prompt guides the caller through inspecting source code, discovering Organization/stream/schema, running bounded SELECT searches, saving evidence in the caller's own `log-work/` directory, and citing log timestamps with source locations. Provider request logs record endpoint paths, status, duration, and result counts without credentials, query values, or returned application log contents.
 
 ---
 

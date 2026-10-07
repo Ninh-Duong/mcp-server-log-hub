@@ -1,78 +1,19 @@
-# CLI Menu & Diagnostics Guide
+# CLI guide
 
-`mcp-server-log-hub` features an interactive terminal interface designed for human operators, devops engineers, and developers to verify server health, test queries, and inspect logs before attaching AI clients.
+Run `npm run build`, then `npm run cli`. The first menu asks which log platform you want:
 
----
-
-## 1. Quick Start Commands
-
-```bash
-# Launch interactive terminal controller
-npm run cli
-
-# Run preflight diagnostics check only
-npm run preflight
-
-# Start server directly in MCP Stdio mode (for AI clients)
-npm start
+```text
+1. Seq
+2. Observe
+3. Exit
 ```
 
----
+Select **Seq** to enter its server URL and read-only API key, then run a log query. Select **Observe** to enter the OpenObserve URL, logging-account email, and account token. You can paste the raw token or a Basic credential; the CLI detects the email when a Basic credential is pasted. The secret is hidden while you type. The CLI saves the accounts separately in `config/seq.env` and `config/openobserve.env`, then connects to OpenObserve to list accessible Organizations and log streams. On a later run, you can reuse a saved account or enter a replacement.
 
-## 2. Interactive Menu Navigation
+At the token/API key prompt, paste with **Ctrl+Shift+V** or **Shift+Insert**, then press **Enter**. Asterisks confirm input was received; Backspace edits the value. The display stops at 32 asterisks, but the full token is accepted.
 
-When running `npm run cli`, you are greeted with the interactive controller:
+After choosing an OpenObserve stream, choose RCID search or SQL search. RCID search defaults to a field named `rcid`; enter the actual field name if your logs use another name. Both searches default to the last 15 minutes and at most 50 results. A query may return up to 500 results.
 
-```
-========================================================
-           MCP SERVER LOG HUB - CLI CONTROLLER          
-========================================================
-Unified multi-provider log observability for AI Agents & Humans
---------------------------------------------------------
+The credential files and the entire `logs/` and `log-work/` directories are ignored by Git. `logs/mcp-process.log` records provider endpoint, status, duration, result count, and failures without credentials, query values, or returned log contents. `npm run preflight` checks local configuration; selecting Observe in the CLI checks the real API connection. Start the MCP stdio server separately with `npm start`.
 
-[MENU OPTIONS]
-  1. Run Environment Preflight Diagnostics
-  2. List Supported Log Providers & Status
-  3. Execute Seq Live Test Query
-  4. View Recent Process Logs (logs/mcp-process.log)
-  5. OpenObserve Log Processing
-  6. Launch MCP Server in Stdio Mode
-  7. Exit
---------------------------------------------------------
-Select an option (1-7):
-```
-
-### Option 1: Run Environment Preflight Diagnostics
-Runs automated checks:
-- **Node.js Runtime**: Confirms Node version is >= 18.0.0.
-- **Logs Storage**: Verifies write permissions on `logs/`.
-- **MCP SDK & Core Modules**: Verifies protocol bindings.
-- **Provider Credentials**: Checks presence of Seq and OpenObserve account variables from `config/*.env`.
-
-### Option 2: List Supported Log Providers & Status
-Displays whether each provider has credentials (`[CONFIGURED]` or `[UNCONFIGURED]`). OpenObserve menu option 5 verifies the actual connection.
-
-### Option 3: Execute Seq Live Test Query
-Prompts you for:
-- Query text (e.g. `Error`, `Timeout`, `*`)
-- Result limit (default: 10)
-Directly queries the selected backend and renders output in the terminal.
-
-### Option 4: View Recent Process Logs
-Prints the last 25 lines from `logs/mcp-process.log` without leaving the terminal.
-
-### Option 5: OpenObserve Log Processing
-Connects using `config/openobserve.env`, lists accessible Organizations and log streams, then searches by RCID or SQL. See [OpenObserve guide](OPENOBSERVE_GUIDE.md).
-
-### Option 6: Launch MCP Server in Stdio Mode
-Transitions from interactive mode into headless JSON-RPC stdio transport mode.
-
----
-
-## 3. Troubleshooting Common Preflight Warnings
-
-| Symptom | Root Cause | Solution |
-| :--- | :--- | :--- |
-| `[WARN] Seq Provider: Unconfigured` | `SEQ_SERVER_URL` or `SEQ_API_KEY` is missing | Fill in `config/seq.env`. |
-| `[WARN] OpenObserve Provider: Unconfigured` | OpenObserve URL, email, or token is missing | Fill in `config/openobserve.env`. |
-| `[FAIL] Logs Storage: Cannot write` | Permissions issue on `logs/` folder | Ensure current user has write permissions in the repo directory. |
+See [OpenObserve log access](OPENOBSERVE_GUIDE.md) for account-token creation and Organization permissions.

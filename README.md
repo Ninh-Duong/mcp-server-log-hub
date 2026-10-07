@@ -31,7 +31,7 @@ npm run build
 ```
 
 ### 2. Configure Credentials
-Keep a separate logging account for each provider. Edit `config/seq.env` and `config/openobserve.env` with your account credentials; tracked `.env.example` files show the expected variables. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
+Keep a separate logging account for each provider. Run `npm run cli`, choose **1. Seq** or **2. Observe**, and enter the connection details when prompted. The CLI saves them in the Git-ignored `config/seq.env` and `config/openobserve.env`. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
 
 ### 3. Verify Health & Test Interactively
 Run the interactive CLI menu:

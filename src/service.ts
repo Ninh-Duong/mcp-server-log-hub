@@ -24,9 +24,14 @@ export class LogHubService {
           `Unknown provider '${params.provider}'. Available: ${getAllProviders().map((p) => p.name).join(', ')}`
         );
       }
-      logger.info(`Querying provider '${provider.name}' with query: "${params.query || '*'}"`);
+      logger.info('log_query_started', {
+        provider: provider.name, limit, queryProvided: Boolean(params.query),
+        organization: params.organization, stream: params.stream, level: params.level,
+      });
       const logs = await provider.queryLogs({ ...params, limit });
-      return this.filterAndSort(logs, params.level, limit);
+      const results = this.filterAndSort(logs, params.level, limit);
+      logger.info('log_query_completed', { provider: provider.name, returned: results.length });
+      return results;
     }
 
     // Multi-provider query across all configured backends
@@ -42,9 +47,12 @@ export class LogHubService {
 
     const queryPromises = configuredProviders.map(async (provider) => {
       try {
-        return await provider.queryLogs({ ...params, limit });
+        logger.info('log_query_started', { provider: provider.name, limit, queryProvided: Boolean(params.query) });
+        const logs = await provider.queryLogs({ ...params, limit });
+        logger.info('log_query_completed', { provider: provider.name, returned: logs.length });
+        return logs;
       } catch (err) {
-        logger.error(`Error querying provider '${provider.name}': ${(err as Error).message}`);
+        logger.error('log_query_failed', { provider: provider.name, errorType: err instanceof Error ? err.name : 'UnknownError' });
         return [];
       }
     });

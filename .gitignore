@@ -6,8 +6,8 @@ dist/
 *.tsbuildinfo
 
 # Runtime Logs & Diagnostic Data
-logs/*
-!logs/.gitkeep
+/logs/
+/log-work/
 *.log
 *.tmp
 *.temp
@@ -19,9 +19,8 @@ data/
 *.jsonl
 
 # Environment Variables & Secrets
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 config/*.env
 *.key
 *.pem

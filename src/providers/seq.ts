@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { LogEntry, LogProvider, LogQuery, ProviderStatus } from '../types.js';
 import { normalizeLogLevel, parseTimeBound } from './base.js';
 import { logger } from '../utils/logger.js';
+import { randomUUID } from 'node:crypto';
 
 export class SeqProvider implements LogProvider {
   public readonly name = 'seq';
@@ -46,8 +47,14 @@ export class SeqProvider implements LogProvider {
       url.searchParams.set('toDateUtc', toIso);
     }
 
-    logger.debug(`Querying Seq API: ${url.toString()}`);
+    const requestId = randomUUID();
+    const started = Date.now();
+    logger.info('seq.request_started', {
+      requestId, method: 'GET', endpoint: '/api/events', limit: count,
+      queryProvided: Boolean(params.query), from: fromIso, to: toIso,
+    });
 
+    let responseStatus: number | undefined;
     try {
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -57,6 +64,7 @@ export class SeqProvider implements LogProvider {
         },
         signal: AbortSignal.timeout(15000),
       });
+      responseStatus = response.status;
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
@@ -72,9 +80,11 @@ export class SeqProvider implements LogProvider {
       }>;
 
       if (!Array.isArray(events)) {
+        logger.info('seq.request_succeeded', { requestId, status: responseStatus, durationMs: Date.now() - started, returned: 0 });
         return [];
       }
 
+      logger.info('seq.request_succeeded', { requestId, status: responseStatus, durationMs: Date.now() - started, returned: events.length });
       return events.map((ev) => {
         let metadata: Record<string, unknown> | undefined;
         if (ev.Properties) {
@@ -97,7 +107,10 @@ export class SeqProvider implements LogProvider {
         };
       });
     } catch (err) {
-      logger.error(`Seq query failed: ${(err as Error).message}`);
+      logger.error('seq.request_failed', {
+        requestId, status: responseStatus, durationMs: Date.now() - started,
+        errorType: err instanceof Error ? err.name : 'UnknownError',
+      });
       throw err;
     }
   }

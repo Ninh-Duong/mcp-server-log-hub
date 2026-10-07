@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,3 +55,14 @@ export const config = {
     token: process.env.OPENOBSERVE_TOKEN || '',
   },
 };
+
+/** Save CLI account settings without putting credentials in tracked files. */
+export function writePrivateEnvFile(file: string, entries: Record<string, string>): void {
+  for (const [key, value] of Object.entries(entries)) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key)) throw new Error('Invalid account setting name');
+    if (/[\r\n]/.test(value)) throw new Error('Account values cannot contain a newline');
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, Object.entries(entries).map(([key, value]) => `${key}=${value}\n`).join(''), { encoding: 'utf8', mode: 0o600 });
+  chmodSync(file, 0o600);
+}

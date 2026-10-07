@@ -3,6 +3,7 @@ import { afterEach, test } from 'node:test';
 import { config } from '../config.js';
 import { OpenObserveProvider } from '../providers/openobserve.js';
 import { getProvider } from '../providers/index.js';
+import { logger } from '../utils/logger.js';
 
 const oldFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = oldFetch; });
@@ -32,6 +33,28 @@ test('lists log streams for a selected organization', async () => {
   assert.equal(calls[1]?.url, 'https://logs.example.test:10443/api/org-id/streams?type=logs');
 });
 
+test('returns stream field names and types for agent SQL planning', async () => {
+  const { provider, calls } = setup([
+    { data: [{ name: 'eagers_au', identifier: 'org-id' }] },
+    { list: [{ name: 'wecrm_ape_prod', stream_type: 'logs' }] },
+    { name: 'wecrm_ape_prod', schema: [{ name: '_timestamp', type: 'Int64' }, { name: 'rcid', type: 'Utf8' }] },
+  ]);
+  assert.deepEqual(await provider.getStreamSchema('org-id', 'wecrm_ape_prod'), [
+    { name: '_timestamp', type: 'Int64' }, { name: 'rcid', type: 'Utf8' },
+  ]);
+  assert.equal(calls[2]?.url, 'https://logs.example.test:10443/api/org-id/streams/wecrm_ape_prod/schema?type=logs');
+});
+
+test('writes redacted OpenObserve HTTP failure details to the process log', async () => {
+  const { provider } = setup([]);
+  globalThis.fetch = async () => new Response('Unauthorized Access', { status: 401 });
+  await assert.rejects(provider.listOrganizations(), /HTTP 401/);
+  const recent = logger.getRecentLogs(10).join('\n');
+  assert.match(recent, /openobserve\.request_failed/);
+  assert.match(recent, /401/);
+  assert.doesNotMatch(recent, /test-token|Authorization|reader@example\.test/);
+});
+
 test('search sends bounded SQL and normalizes hits', async () => {
   const { provider, calls } = setup([{ data: [{ name: 'eagers_au', identifier: 'org-id' }] }, { hits: [{ _timestamp: 1790577000000000, level: 'error', message: 'broken', rcid: 'abc' }] }]);
   const logs = await provider.searchLogs({ organization: 'org-id', sql: 'SELECT * FROM "wecrm_ape_prod"', from: '2026-09-28T05:00:00Z', to: '2026-09-28T05:15:00Z', limit: 20 });
@@ -41,6 +64,12 @@ test('search sends bounded SQL and normalizes hits', async () => {
   assert.equal(calls[1]?.url, 'https://logs.example.test:10443/api/org-id/_search');
   const body = JSON.parse(String(calls[1]?.init?.body));
   assert.deepEqual(body.query, { sql: 'SELECT * FROM "wecrm_ape_prod"', start_time: 1790571600000000, end_time: 1790572500000000, from: 0, size: 20 });
+});
+
+test('rejects non-SELECT OpenObserve queries before making a request', async () => {
+  const { provider, calls } = setup([]);
+  await assert.rejects(provider.searchLogs({ organization: 'org-id', sql: 'DELETE FROM "logs"' }), /Only a single SELECT query is allowed/);
+  assert.equal(calls.length, 0);
 });
 
 test('RCID search quotes data and stream names', async () => {
