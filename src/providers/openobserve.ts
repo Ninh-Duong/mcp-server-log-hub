@@ -74,12 +74,18 @@ export class OpenObserveProvider implements LogProvider {
     return response.json();
   }
 
+  // ponytail: 60s TTL, so a revoked organization stays usable for up to 60s; drop the TTL if that is unacceptable.
+  private orgCache?: { key: string; at: number; organizations: OpenObserveOrganization[] };
+
   public async listOrganizations(operationId: string = randomUUID()): Promise<OpenObserveOrganization[]> {
+    const key = `${config.openobserve.url}|${config.openobserve.email}`;
+    if (this.orgCache?.key === key && Date.now() - this.orgCache.at < 60_000) return this.orgCache.organizations;
     const result = await this.request('api/organizations', {}, operationId) as { data?: Array<Record<string, unknown>> };
     if (!Array.isArray(result.data)) throw new Error('Unexpected OpenObserve organizations response');
     const organizations = result.data.map((org) => ({ name: String(org.name || ''), identifier: String(org.identifier || '') }))
       .filter((org) => org.name && org.identifier);
     logger.info('openobserve.organizations_loaded', { count: organizations.length });
+    this.orgCache = { key, at: Date.now(), organizations };
     return organizations;
   }
 
@@ -152,6 +158,7 @@ export class OpenObserveProvider implements LogProvider {
     return this.searchLogs({ ...params, sql, operationId });
   }
 
+  // ponytail: level is filtered after fetch (level field name varies per stream), so `limit` may under-fill; add a `levelField` param to push it into SQL if that matters.
   public async queryLogs(params: LogQuery): Promise<LogEntry[]> {
     if (!params.organization) throw new Error('OpenObserve organization is required');
     if (!params.query && !params.stream) throw new Error('OpenObserve SQL query or stream is required');

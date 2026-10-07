@@ -81,7 +81,7 @@ this.register(new NewProvider());
   - `from` *(optional string)*: ISO timestamp or `'15m'`, `'1h'`, `'24h'`, `'7d'`.
   - `to` *(optional string)*: ISO timestamp.
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
-  - `level` *(optional string)*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`.
+  - `level` *(optional string or string[])*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`. One level = minimum severity (`'Warning'` → Warning, Error, Fatal); an array = exactly those levels.
 
 OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
 

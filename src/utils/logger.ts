@@ -73,10 +73,6 @@ export class ProcessLogger {
       return [];
     }
   }
-
-  public getLogPath(): string {
-    return this.logFilePath;
-  }
 }
 
 export const logger = new ProcessLogger();

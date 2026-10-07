@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerLogHubTools } from './tools.js';
@@ -57,8 +59,8 @@ async function main(): Promise<void> {
   }
 }
 
-// Only auto-run if directly executed as a script
-if (process.argv[1] && (process.argv[1].endsWith('index.js') || process.argv[1].endsWith('index.ts'))) {
+// Only auto-run when this file is the entry point (realpath resolves the npm bin symlink), not when imported
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   main().catch((err) => {
     logger.error(`Fatal startup error: ${(err as Error).message}`, err);
     process.exit(1);

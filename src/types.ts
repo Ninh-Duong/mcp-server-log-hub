@@ -2,7 +2,9 @@
  * Core type definitions for mcp-server-log-hub
  */
 
-export type LogLevel = 'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal';
+/** Ordered from least to most severe. */
+export const LOG_LEVELS = ['Verbose', 'Debug', 'Information', 'Warning', 'Error', 'Fatal'] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export interface LogQuery {
   /** Search text, keyword, or provider-native query filter */
@@ -13,8 +15,8 @@ export interface LogQuery {
   to?: string;
   /** Maximum number of records to return (default: 50, max: 500) */
   limit?: number;
-  /** Minimum log severity level */
-  level?: LogLevel;
+  /** One level = minimum severity; an array = exactly those levels */
+  level?: LogLevel | LogLevel[];
   /** OpenObserve organization identifier */
   organization?: string;
   /** OpenObserve log stream */

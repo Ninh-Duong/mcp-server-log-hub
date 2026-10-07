@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { LogHubService, defaultLogHubService } from './service.js';
-import { LogLevel } from './types.js';
+import { LOG_LEVELS } from './types.js';
 import { openObserveProvider } from './providers/index.js';
 import { logger } from './utils/logger.js';
 
@@ -113,9 +113,9 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
         .default(50)
         .describe('Maximum number of log events to return (1-500, default: 50).'),
       level: z
-        .enum(['Verbose', 'Debug', 'Information', 'Warning', 'Error', 'Fatal'])
+        .union([z.enum(LOG_LEVELS), z.array(z.enum(LOG_LEVELS)).min(1)])
         .optional()
-        .describe('Filter logs by minimum severity level.'),
+        .describe("One level = minimum severity (e.g. 'Warning' returns Warning, Error, Fatal); an array = exactly those levels (e.g. ['Debug','Error'])."),
     },
     async (args) => {
       try {
@@ -127,7 +127,7 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
           from: args.from,
           to: args.to,
           limit: args.limit,
-          level: args.level as LogLevel | undefined,
+          level: args.level,
         });
 
         return {

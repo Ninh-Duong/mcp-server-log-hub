@@ -1,4 +1,12 @@
-import { LogLevel } from '../types.js';
+import { LOG_LEVELS, LogLevel } from '../types.js';
+
+/**
+ * Expands a level filter: one level means "this or more severe", an array means exactly those levels
+ */
+export function resolveLevels(level?: LogLevel | LogLevel[]): LogLevel[] | undefined {
+  if (!level) return undefined;
+  return Array.isArray(level) ? level : LOG_LEVELS.slice(LOG_LEVELS.indexOf(level));
+}
 
 /**
  * Normalizes provider-specific log levels into unified LogLevel type

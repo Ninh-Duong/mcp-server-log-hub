@@ -56,23 +56,7 @@ export function runPreflightChecks(logToConsole: boolean = false): PreflightResu
     });
   }
 
-  // 3. Core dependencies sanity
-  try {
-    // Check if MCP SDK is importable
-    items.push({
-      name: 'MCP SDK & Core Modules',
-      status: 'PASS',
-      message: 'Core MCP protocol and schema libraries verified.',
-    });
-  } catch {
-    items.push({
-      name: 'MCP SDK & Core Modules',
-      status: 'FAIL',
-      message: 'Failed to resolve core MCP dependencies. Run `npm install`.',
-    });
-  }
-
-  // 4. Seq Provider credentials check
+  // 3. Seq Provider credentials check
   if (config.seq.serverUrl) {
     items.push({
       name: 'Seq Provider',
@@ -89,7 +73,7 @@ export function runPreflightChecks(logToConsole: boolean = false): PreflightResu
     });
   }
 
-  // 5. OpenObserve Provider credentials check
+  // 4. OpenObserve Provider credentials check
   if (config.openobserve.url && config.openobserve.email && config.openobserve.token) {
     items.push({
       name: 'OpenObserve Provider',

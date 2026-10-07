@@ -1,4 +1,5 @@
-import { LogEntry, LogQuery, ProviderStatus } from './types.js';
+import { LogEntry, LogLevel, LogQuery, ProviderStatus } from './types.js';
+import { normalizeLogLevel, resolveLevels } from './providers/base.js';
 import { getAllProviders, getProvider, listProviders } from './providers/index.js';
 import { logger } from './utils/logger.js';
 
@@ -62,12 +63,9 @@ export class LogHubService {
     return this.filterAndSort(combined, params.level, limit);
   }
 
-  private filterAndSort(logs: LogEntry[], levelFilter?: string, limit: number = 50): LogEntry[] {
-    let filtered = logs;
-    if (levelFilter) {
-      const targetLevel = levelFilter.toLowerCase();
-      filtered = logs.filter((log) => log.level.toLowerCase() === targetLevel);
-    }
+  private filterAndSort(logs: LogEntry[], levelFilter?: LogLevel | LogLevel[], limit: number = 50): LogEntry[] {
+    const levels = resolveLevels(levelFilter);
+    const filtered = levels ? logs.filter((log) => levels.includes(normalizeLogLevel(log.level))) : logs;
 
     // Sort descending by timestamp (newest first)
     filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());

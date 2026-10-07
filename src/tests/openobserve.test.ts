@@ -73,9 +73,9 @@ test('rejects non-SELECT OpenObserve queries before making a request', async () 
 });
 
 test('RCID search quotes data and stream names', async () => {
-  const { provider, calls } = setup([{ data: [{ name: 'eagers_au', identifier: 'org-id' }] }, { list: [{ name: 'log"one', stream_type: 'logs' }] }, { data: [{ name: 'eagers_au', identifier: 'org-id' }] }, { hits: [] }]);
+  const { provider, calls } = setup([{ data: [{ name: 'eagers_au', identifier: 'org-id' }] }, { list: [{ name: 'log"one', stream_type: 'logs' }] }, { hits: [] }]);
   await provider.findByRcid({ organization: 'org-id', stream: 'log"one', field: 'rcid', rcid: "x' OR 1=1", from: '15m', limit: 10 });
-  const body = JSON.parse(String(calls[3]?.init?.body));
+  const body = JSON.parse(String(calls[2]?.init?.body));
   assert.equal(body.query.sql, `SELECT * FROM "log""one" WHERE "rcid" = 'x'' OR 1=1' ORDER BY _timestamp DESC`);
 });
 
@@ -89,6 +89,13 @@ test('rejects an invalid end time instead of silently searching until now', asyn
   const { provider, calls } = setup([{ data: [{ name: 'eagers_au', identifier: 'org-id' }] }]);
   await assert.rejects(provider.searchLogs({ organization: 'org-id', sql: 'SELECT * FROM "logs"', from: '15m', to: 'not-a-date' }), /Invalid time range/);
   assert.equal(calls.length, 1);
+});
+
+test('reuses the organization list across calls within the cache window', async () => {
+  const { provider, calls } = setup([{ data: [{ name: 'eagers_au', identifier: 'org-id' }] }, { list: [{ name: 's1' }] }, { list: [{ name: 's1' }] }]);
+  await provider.listStreams('org-id');
+  await provider.listStreams('org-id');
+  assert.equal(calls.filter((c) => c.url.endsWith('/api/organizations')).length, 1);
 });
 
 test('keeps the old observe provider name as an alias for OpenObserve', () => {
