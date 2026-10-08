@@ -78,13 +78,13 @@ export function runPreflightChecks(logToConsole: boolean = false): PreflightResu
     items.push({
       name: 'OpenObserve Provider',
       status: 'PASS',
-      message: `Credentials configured for ${config.openobserve.url} (connection not verified)`,
+      message: `Credentials configured for ${config.openobserve.url}${config.openobserve.env ? ` [${config.openobserve.env.toUpperCase()}]` : ''} (connection not verified)`,
     });
   } else {
     items.push({
       name: 'OpenObserve Provider',
       status: 'WARN',
-      message: 'Unconfigured (OPENOBSERVE_URL, OPENOBSERVE_EMAIL or OPENOBSERVE_TOKEN missing).',
+      message: `Unconfigured${config.openobserve.env ? ` for ${config.openobserve.env.toUpperCase()}` : ''} (OPENOBSERVE_URL, OPENOBSERVE_EMAIL or OPENOBSERVE_TOKEN missing; set OPENOBSERVE_ENV=dev|stg|prod to pick config/openobserve.<env>.env).`,
     });
   }
 

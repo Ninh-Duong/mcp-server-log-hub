@@ -22,16 +22,25 @@ Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat,
 ## 🚀 Quick Start
 
 ### 1. Installation
+Requires Node.js 18.17+. Pick one:
+
 ```bash
-# Clone the repository and install minimal dependencies
+# From source (any OS): start.mjs checks Node, runs `npm ci` when node_modules is missing or
+# older than package-lock.json, rebuilds when src/ changed, then starts the server.
 git clone https://github.com/your-org/mcp-server-log-hub.git
 cd mcp-server-log-hub
-npm install
-npm run build
+node start.mjs            # same as `npm start`; add --cli or --preflight
+
+# As a package: build a tarball and install it anywhere
+npm pack                  # -> mcp-server-log-hub-1.0.0.tgz (dist + config examples only)
+npm i -g ./mcp-server-log-hub-1.0.0.tgz
+mcp-server-log-hub --preflight
 ```
 
+`OPENOBSERVE_ENV` (`dev`, `stg` or `prod`) picks the saved `config/openobserve.<env>.env` account; register one MCP server entry per environment if you need several. Alternatively set `OPENOBSERVE_URL` / `OPENOBSERVE_EMAIL` / `OPENOBSERVE_TOKEN` directly. Installed as a package, credentials come from the `env` block of your MCP client config (environment variables take precedence over `config/*.env`).
+
 ### 2. Configure Credentials
-Keep a separate logging account for each provider. Run `npm run cli`, choose **1. Seq** or **2. Observe**, and enter the connection details when prompted. The CLI saves them in the Git-ignored `config/seq.env` and `config/openobserve.env`. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
+Keep a separate logging account for each provider. For Seq, run `npm run cli`, choose **1. Seq** and enter the connection details; they are saved in the Git-ignored `config/seq.env`. For OpenObserve, copy `config/openobserve.env.example` to `config/openobserve.dev.env`, `config/openobserve.stg.env` and/or `config/openobserve.prod.env` and fill in that environment's URL, service-account email and token (a Basic credential in `OPENOBSERVE_TOKEN` is split into email and token automatically). The CLI only reads these files: choosing **2. Observe** → **DEV / STG / PROD** connects with that file, or fails if it is missing or incomplete. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
 
 ### 3. Verify Health & Test Interactively
 Run the interactive CLI menu:
@@ -54,13 +63,11 @@ Add `mcp-server-log-hub` to your `claude_desktop_config.json` or Antigravity MCP
   "mcpServers": {
     "log-hub": {
       "command": "node",
-      "args": ["d:/VisualStudioCode/mcp-server-log-hub/dist/index.js"],
+      "args": ["d:/VisualStudioCode/mcp-server-log-hub/start.mjs"],
       "env": {
         "SEQ_SERVER_URL": "http://localhost:5341",
         "SEQ_API_KEY": "your_api_key",
-        "OPENOBSERVE_URL": "https://your-openobserve-instance.example:10443",
-        "OPENOBSERVE_EMAIL": "logging-reader@example.com",
-        "OPENOBSERVE_TOKEN": "your_service_account_token"
+        "OPENOBSERVE_ENV": "dev"
       }
     }
   }

@@ -83,7 +83,7 @@ this.register(new NewProvider());
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
   - `level` *(optional string or string[])*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`. One level = minimum severity (`'Warning'` → Warning, Error, Fatal); an array = exactly those levels.
 
-OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
+OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `list_openobserve_services`, `get_openobserve_service_logs`, `export_openobserve_logs` (writes an `ai-context/` snapshot; read its `SUMMARY.md` first), `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
 
 ---
 
@@ -95,6 +95,6 @@ This repository is designed to be consumed as a feature by a Master MCP.
   import { registerLogHubTools } from 'mcp-server-log-hub';
   registerLogHubTools(parentServer, { prefix: 'log_hub_' });
   ```
-- If running as a child subprocess, spawn `node dist/index.js` using `StdioClientTransport`.
+- If running as a child subprocess, spawn `node start.mjs` (auto-installs and builds) using `StdioClientTransport`.
 
 Refer to `docs/PARENT_MCP_GUIDE.md` for comprehensive integration examples.

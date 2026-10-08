@@ -8,6 +8,7 @@ dist/
 # Runtime Logs & Diagnostic Data
 /logs/
 /log-work/
+/ai-context/
 *.log
 *.tmp
 *.temp

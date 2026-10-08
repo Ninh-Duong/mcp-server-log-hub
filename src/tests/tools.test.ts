@@ -20,6 +20,9 @@ test('registers an agent bug investigation prompt and schema discovery tool', as
   registerLogHubTools(server);
 
   assert.ok(tools.has('list_openobserve_stream_schema'));
+  assert.ok(tools.has('list_openobserve_services'));
+  assert.ok(tools.has('get_openobserve_service_logs'));
+  assert.ok(tools.has('export_openobserve_logs'));
   assert.match(tools.get('search_openobserve_logs')?.description || '', /SELECT/i);
   const prompt = prompts.get('investigate_api_bug');
   assert.ok(prompt);

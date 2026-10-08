@@ -59,7 +59,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 // 1. Create client connection pointing to mcp-server-log-hub
 const transport = new StdioClientTransport({
   command: 'node',
-  args: ['./sub-mcps/mcp-server-log-hub/dist/index.js'],
+  args: ['./sub-mcps/mcp-server-log-hub/start.mjs'],
   env: {
     ...process.env,
     SEQ_SERVER_URL: 'http://localhost:5341',

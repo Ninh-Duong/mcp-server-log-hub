@@ -1,10 +1,17 @@
 import { createInterface } from 'node:readline';
 import { Writable } from 'node:stream';
 import { resolve } from 'node:path';
-import { config, PROJECT_ROOT, writePrivateEnvFile } from '../config.js';
+import { config, CONFIG_DIR, OPENOBSERVE_ENVS, openObserveEnvFile, useOpenObserveEnv, writePrivateEnvFile } from '../config.js';
 import { defaultLogHubService } from '../service.js';
 import { openObserveProvider } from '../providers/index.js';
 import { logger } from '../utils/logger.js';
+import type { LogLevel, RequestFlow } from '../types.js';
+import { parseTimeBound } from '../providers/base.js';
+import { MAX_ROWS } from '../providers/openobserve.js';
+import { pickFlowIds, writeAiContextSnapshot } from '../ai-context.js';
+
+/** Rows printed to the terminal; the saved snapshot keeps all of them. */
+const SHOWN = 50;
 
 export async function runCliMenu(): Promise<void> {
   logger.setCliMode(true);
@@ -43,33 +50,20 @@ export async function runCliMenu(): Promise<void> {
     if (!serverUrl || !apiKey) throw new Error('Seq URL and API key are required');
     const parsed = new URL(serverUrl);
     if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) throw new Error('Seq URL must use HTTPS outside localhost');
-    writePrivateEnvFile(resolve(PROJECT_ROOT, 'config/seq.env'), { SEQ_SERVER_URL: serverUrl, SEQ_API_KEY: apiKey });
+    writePrivateEnvFile(resolve(CONFIG_DIR, 'seq.env'), { SEQ_SERVER_URL: serverUrl, SEQ_API_KEY: apiKey });
     config.seq.serverUrl = serverUrl.replace(/\/+$/, '');
     config.seq.apiKey = apiKey;
     console.log('Seq account saved locally.');
   }
 
   async function configureOpenObserve(): Promise<void> {
-    if (openObserveProvider.getStatus().configured && (await ask('Use saved Observe account? (Y/n): ')).trim().toLowerCase() !== 'n') return;
-    const url = (await ask(`Observe URL${config.openobserve.url ? ` [${config.openobserve.url}]` : ''}: `)).trim() || config.openobserve.url;
-    let email = (await ask(`Account email${config.openobserve.email ? ` [${config.openobserve.email}]` : ''}: `)).trim() || config.openobserve.email;
-    let token = (await secret('Account token or Basic credential (hidden): ')).trim() || config.openobserve.token;
-    const encoded = token.replace(/^(?:authorization:\s*)?basic\s+/i, '');
-    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
-    const separator = decoded.indexOf(':');
-    if (separator > 0 && Buffer.from(decoded).toString('base64') === encoded && /^[^\s:@]+@[^\s:@]+\.[^\s:@]+$/.test(decoded.slice(0, separator))) {
-      email = decoded.slice(0, separator);
-      token = decoded.slice(separator + 1);
-      console.log(`Using Basic credential for ${email}.`);
-    }
-    if (!url || !email || !token) throw new Error('Observe URL, email, and token are required');
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) throw new Error('Observe URL must use HTTPS outside localhost');
-    writePrivateEnvFile(resolve(PROJECT_ROOT, 'config/openobserve.env'), { OPENOBSERVE_URL: url, OPENOBSERVE_EMAIL: email, OPENOBSERVE_TOKEN: token });
-    config.openobserve.url = url.replace(/\/+$/, '');
-    config.openobserve.email = email;
-    config.openobserve.token = token;
-    console.log('Observe account saved locally.');
+    console.log(`\nObserve environment:\n${OPENOBSERVE_ENVS.map((env, index) => `  ${index + 1}. ${env.toUpperCase()}`).join('\n')}`);
+    const env = OPENOBSERVE_ENVS[Number((await ask(`Choose environment 1-${OPENOBSERVE_ENVS.length}: `)).trim()) - 1];
+    if (!env) throw new Error('Invalid environment selection');
+    // Accounts are read only from config/openobserve.<env>.env; the CLI never prompts for or saves them.
+    useOpenObserveEnv(env);
+    const status = openObserveProvider.getStatus();
+    if (!status.configured) throw new Error(`Connect failed: ${openObserveEnvFile(env)} is missing or incomplete (${status.missingVariables?.join(', ')})`);
   }
 
   async function runSeq(): Promise<void> {
@@ -84,7 +78,7 @@ export async function runCliMenu(): Promise<void> {
 
   async function runOpenObserve(): Promise<void> {
     await configureOpenObserve();
-    console.log('Connecting to Observe...');
+    console.log(`Connecting to Observe ${config.openobserve.env?.toUpperCase()} (${config.openobserve.url})...`);
     const organizations = await openObserveProvider.listOrganizations();
     if (!organizations.length) { console.log('This account has no accessible Organizations.'); return; }
     console.log('\nAccessible Organizations:');
@@ -97,17 +91,77 @@ export async function runCliMenu(): Promise<void> {
     streams.forEach((stream, index) => console.log(`  ${index + 1}. ${stream}`));
     const stream = streams[Number((await ask('Choose stream number: ')).trim()) - 1];
     if (!stream) throw new Error('Invalid stream selection');
-    const mode = (await ask('Search by (1) RCID or (2) SQL? ')).trim();
-    if (mode !== '1' && mode !== '2') throw new Error('Choose 1 or 2');
-    const from = (await ask('From [15m]: ')).trim() || '15m';
-    const limit = Number((await ask('Maximum results [50]: ')).trim() || 50);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('Maximum results must be 1-500');
-    const common = { organization: organization.identifier, from, limit };
+    const mode = (await ask('Search by: 1. Service & level  2. RCID  3. SQL\nChoose 1-3: ')).trim();
+    if (!['1', '2', '3'].includes(mode)) throw new Error('Choose 1, 2, or 3');
+    const { from, to } = await askTimeRange(mode === '1' ? 2 : 1);
+    const organizationId = organization.identifier;
+    let service: string | undefined;
+    let levels: LogLevel[] | undefined;
+    if (mode === '1') {
+      const { services } = await openObserveProvider.listServices({ organization: organizationId, stream, from, to });
+      if (!services.length) { console.log(`No services logged in ${stream} in this range.`); return; }
+      console.log(`\nServices in ${stream}:`);
+      const width = Math.max(...services.map((s) => s.name.length));
+      services.forEach((s, index) => {
+        const issues = s.levels ? ` (${s.levels.Error ?? 0} Error, ${s.levels.Warning ?? 0} Warning${s.levels.Fatal ? `, ${s.levels.Fatal} Fatal` : ''})` : '';
+        console.log(`  ${String(index + 1).padStart(2)}. ${s.name.padEnd(width)}  ${String(s.count).padStart(7)} logs${issues}`);
+      });
+      console.log('   0. All services');
+      const choice = Number((await ask('Choose service: ')).trim());
+      if (!Number.isInteger(choice) || choice < 0 || choice > services.length) throw new Error('Invalid service selection');
+      service = choice ? services[choice - 1]!.name : undefined;
+      const levelMenu: Array<[string, LogLevel[] | undefined]> = [
+        ['Error (Error+Fatal/Critical)', ['Error', 'Fatal']], ['Warning', ['Warning']], ['Information', ['Information']], ['Debug/Verbose', ['Debug', 'Verbose']], ['All', undefined],
+      ];
+      console.log(`Log level: ${levelMenu.map(([label], index) => `${index + 1}. ${label}`).join('  ')}`);
+      const picks = ((await ask('Choose level(s), e.g. 1 or 1,2 [1,2]: ')).trim() || '1,2').split(',').map((v) => levelMenu[Number(v.trim()) - 1]);
+      if (picks.some((p) => !p)) throw new Error('Invalid level selection');
+      levels = picks.some((p) => !p![1]) ? undefined : picks.flatMap((p) => p![1]!);
+    }
+    const limit = Number((await ask(`Maximum results (1-${MAX_ROWS}) [500]: `)).trim() || 500);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_ROWS) throw new Error(`Maximum results must be 1-${MAX_ROWS}`);
+    const common = { organization: organizationId, from, to, limit };
+    let sql: string | undefined;
+    if (mode === '3') sql = (await ask(`SQL [SELECT * FROM "${stream}"]: `)).trim() || `SELECT * FROM "${stream.replace(/"/g, '""')}"`;
     const logs = mode === '1'
-      ? await openObserveProvider.findByRcid({ ...common, stream, field: (await ask('RCID field [rcid]: ')).trim() || 'rcid', rcid: (await ask('RCID: ')).trim() })
-      : await openObserveProvider.searchLogs({ ...common, sql: (await ask(`SQL [SELECT * FROM "${stream}"]: `)).trim() || `SELECT * FROM "${stream.replace(/"/g, '""')}"` });
-    console.log(`\nFound ${logs.length} logs:`);
-    for (const log of logs) console.log(`[${log.timestamp}] [${log.level}] ${log.message}`);
+      ? await openObserveProvider.searchServiceLogs({ ...common, stream, service, levels })
+      : mode === '2'
+        ? await openObserveProvider.findByRcid({ ...common, stream, field: (await ask('RCID field [rcid]: ')).trim() || 'rcid', rcid: (await ask('RCID: ')).trim() })
+        : await openObserveProvider.searchLogs({ ...common, sql: sql! });
+    console.log(`\nFound ${logs.length} logs${logs.length > SHOWN ? ` (showing newest ${SHOWN})` : ''}:`);
+    for (const log of logs.slice(0, SHOWN)) console.log(`[${log.timestamp}] [${log.level}]${log.service ? ` [${log.service}]` : ''} ${log.message}`);
+    if (logs.length > SHOWN) console.log(`... ${logs.length - SHOWN} more (save to ai-context to keep all)`);
+    if (!logs.length || (await ask('\nSave to ai-context? (Y/n): ')).trim().toLowerCase() === 'n') return;
+    const flowIds = pickFlowIds(logs);
+    let flows: RequestFlow[] = [];
+    if (flowIds.length && (await ask(`Fetch full request flows (rcid/trace_id) for ${flowIds.length} sampled errors? (Y/n): `)).trim().toLowerCase() !== 'n') {
+      flows = await openObserveProvider.fetchFlows({ organization: organizationId, stream, ids: flowIds, from, to });
+      console.log(`Loaded ${flows.length} flows (${flows.reduce((n, f) => n + f.entries.length, 0)} logs).`);
+    }
+    const snapshot = writeAiContextSnapshot(logs, {
+      provider: 'openobserve', env: config.openobserve.env, organization: organization.name, stream, service, levels, from, to, limit, sql,
+      note: logs.some((log) => !log.metadata?.severity && !log.metadata?.level) ? 'Some levels are inferred from log text (stream has no level field).' : undefined,
+    }, { flows });
+    console.log(`Saved ${snapshot.rows} logs${snapshot.truncated ? ' (truncated at the limit)' : ''}. AI entry point:\n  ${snapshot.summaryPath}`);
+  }
+
+  /** Preset or custom range, resolved once to ISO so every query in this search uses the same window. */
+  async function askTimeRange(defaultChoice: number): Promise<{ from: string; to: string }> {
+    const presets: Array<[string, string]> = [['Last 15 minutes', '15m'], ['Last 1 hour', '1h'], ['Last 6 hours', '6h'], ['Last 24 hours', '24h'], ['Last 7 days', '7d']];
+    console.log(`\nTime range:\n${presets.map(([label], index) => `  ${index + 1}. ${label}`).join('\n')}\n  ${presets.length + 1}. Custom (from / to)`);
+    const choice = Number((await ask(`Choose 1-${presets.length + 1} [${defaultChoice}]: `)).trim() || defaultChoice);
+    let fromInput: string;
+    let toInput = '';
+    if (presets[choice - 1]) fromInput = presets[choice - 1]![1];
+    else if (choice === presets.length + 1) {
+      fromInput = (await ask('From (e.g. 2026-10-07 09:00 local, ISO 8601, or 30m): ')).trim();
+      toInput = (await ask('To (blank = now): ')).trim();
+    } else throw new Error('Invalid time range selection');
+    const from = parseTimeBound(fromInput);
+    const to = toInput ? parseTimeBound(toInput) : new Date().toISOString();
+    if (!from || !to || Date.parse(from) >= Date.parse(to)) throw new Error('Invalid time range: use local "YYYY-MM-DD HH:mm", ISO 8601, or 15m/1h/7d, with From before To');
+    console.log(`Range: ${new Date(from).toLocaleString()} → ${new Date(to).toLocaleString()} local (${from} → ${to})`);
+    return { from, to };
   }
 
   while (true) {

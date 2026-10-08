@@ -32,8 +32,17 @@ export interface LogEntry {
   message: string;
   /** Identifier of the provider that produced this log (e.g. 'seq', 'openobserve') */
   provider: string;
+  /** Service that emitted the log, when the provider can tell (e.g. OpenObserve service_name or Kubernetes deployment) */
+  service?: string;
   /** Raw or structured contextual properties */
   metadata?: Record<string, unknown>;
+}
+
+/** Every log sharing one correlation id (e.g. rcid or trace_id) across services: one request end to end. */
+export interface RequestFlow {
+  field: string;
+  value: string;
+  entries: LogEntry[];
 }
 
 export interface ProviderStatus {

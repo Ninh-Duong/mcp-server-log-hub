@@ -17,10 +17,11 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/tests/*.test.js",
-    "start": "node dist/index.js",
-    "cli": "node dist/index.js --cli",
-    "preflight": "node dist/index.js --preflight",
-    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\""
+    "start": "node start.mjs",
+    "cli": "node start.mjs --cli",
+    "preflight": "node start.mjs --preflight",
+    "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
@@ -31,7 +32,7 @@
     "typescript": "^5.8.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.17.0"
   },
   "keywords": [
     "mcp",
@@ -42,5 +43,10 @@
     "openobserve"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "dist",
+    "!dist/tests",
+    "config/*.example"
+  ]
 }

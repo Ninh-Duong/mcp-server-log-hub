@@ -1,5 +1,18 @@
 import { LOG_LEVELS, LogLevel } from '../types.js';
 
+/** Raw level names emitted by common loggers (Serilog, NLog, MEL, etc.) */
+export const LEVEL_ALIASES: Record<LogLevel, string[]> = {
+  Verbose: ['Verbose', 'Trace', 'VRB', 'TRC'],
+  Debug: ['Debug', 'DBG'],
+  Information: ['Information', 'Info', 'INF'],
+  Warning: ['Warning', 'Warn', 'WRN'],
+  Error: ['Error', 'ERR'],
+  Fatal: ['Fatal', 'Critical', 'FTL', 'CRT'],
+};
+
+/** Correlation fields that tie logs of one request together, in the order used to pick a flow id. */
+export const FLOW_ID_FIELDS = ['rcid', 'correlationid', 'trace_id', 'traceid'];
+
 /**
  * Expands a level filter: one level means "this or more severe", an array means exactly those levels
  */

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { config } from '../config.js';
-import { OpenObserveProvider } from '../providers/openobserve.js';
+import { OpenObserveProvider, levelFromText } from '../providers/openobserve.js';
 import { getProvider } from '../providers/index.js';
 import { logger } from '../utils/logger.js';
 
@@ -100,4 +100,83 @@ test('reuses the organization list across calls within the cache window', async 
 
 test('keeps the old observe provider name as an alias for OpenObserve', () => {
   assert.equal(getProvider('observe')?.name, 'openobserve');
+});
+
+const org = { data: [{ name: 'eagers_au', identifier: 'org-id' }] };
+const k8sSchema = { schema: ['_timestamp', 'kubernetes_host', 'kubernetes_namespace_name', 'kubernetes_pod_name', 'log'].map((name) => ({ name, type: 'Utf8' })) };
+
+test('lists structured services with per-level counts', async () => {
+  const { provider, calls } = setup([org, { list: [{ name: 'crm' }] }, { schema: [{ name: 'service_name', type: 'Utf8' }, { name: 'severity', type: 'Utf8' }] }, { hits: [
+    { service: 'CRM.Gateway', lvl: 'Information', n: 90 }, { service: 'CRM.Gateway', lvl: 'Error', n: 7 },
+    { service: 'CRM.Gateway', lvl: 'Critical', n: 1 }, { service: 'CRM.Report', lvl: 'Warning', n: 200 },
+  ] }]);
+  const result = await provider.listServices({ organization: 'org-id', stream: 'crm', from: '1h' });
+  assert.equal(result.field, 'service_name');
+  assert.deepEqual(result.services, [
+    { name: 'CRM.Report', count: 200, levels: { Warning: 200 } },
+    { name: 'CRM.Gateway', count: 98, levels: { Information: 90, Error: 7, Fatal: 1 } },
+  ]);
+  assert.match(JSON.parse(String(calls[3]?.init?.body)).query.sql, /GROUP BY "service_name", "severity"/);
+});
+
+test('groups Kubernetes pods into deployments', async () => {
+  const { provider } = setup([org, { list: [{ name: 'k8s' }] }, k8sSchema, { hits: [
+    { service: 'easyserv-bmw-api-5c67fbd785-lcm4v', n: 300 }, { service: 'easyserv-bmw-api-6fc69d88bc-grj24', n: 7 }, { service: 'easyserv-bmw-system-598fbd4ccd-rdskk', n: 59 },
+  ] }]);
+  const { services } = await provider.listServices({ organization: 'org-id', stream: 'k8s' });
+  assert.deepEqual(services.map((s) => [s.name, s.count]), [['easyserv-bmw-api', 307], ['easyserv-bmw-system', 59]]);
+});
+
+test('structured service search escapes the service and expands level aliases', async () => {
+  const { provider, calls } = setup([org, { list: [{ name: 'crm' }] }, { schema: [{ name: 'service_name', type: 'Utf8' }, { name: 'severity', type: 'Utf8' }] }, { hits: [] }]);
+  await provider.searchServiceLogs({ organization: 'org-id', stream: 'crm', service: "x' OR 1=1", levels: ['Error', 'Fatal'], from: '1h' });
+  const sql = JSON.parse(String(calls[3]?.init?.body)).query.sql;
+  assert.match(sql, /"service_name" = 'x'' OR 1=1'/);
+  assert.match(sql, /"severity" IN \('Error', 'error', 'ERR', 'err', 'Fatal', 'fatal', 'Critical', 'critical'/);
+});
+
+test('Kubernetes service search takes level and service from pod name and log text', async () => {
+  const { provider } = setup([org, { list: [{ name: 'k8s' }] }, k8sSchema, { hits: [
+    { _timestamp: 1, kubernetes_pod_name: 'api-5c67fbd785-lcm4v', log: '[NestWinston] 1  10/7/2026 \x1b[33mWARN\x1b[39M [Guard] disabled\n' },
+    { _timestamp: 2, kubernetes_pod_name: 'api-5c67fbd785-lcm4v', log: '[NestWinston] 1  10/7/2026 \x1b[32MINFO\x1b[39M [Job] warning count: 0\n' },
+    { _timestamp: 3, kubernetes_pod_name: 'api-v2-5c67fbd785-lcm4v', log: '[NestWinston] \x1b[31merror\x1b[39m boom' },
+  ] }]);
+  const logs = await provider.searchServiceLogs({ organization: 'org-id', stream: 'k8s', service: 'api', levels: ['Warning'], from: '1h' });
+  assert.deepEqual(logs.map((l) => [l.service, l.level, l.message]), [['api', 'Warning', '[NestWinston] 1  10/7/2026 WARN [Guard] disabled']]);
+});
+
+test('reads levels from colored log text', () => {
+  assert.equal(levelFromText('[NestWinston] 1  10/7/2026, 7:00:00 PM \x1b[32MINFO\x1b[39M [Mail] sent'), 'Information');
+  assert.equal(levelFromText('[NestWinston] \x1b[33m\x1b[36mverbose\x1b[33m\x1b[39m\t10/7/2026'), 'Verbose');
+  assert.equal(levelFromText('plain line without level'), 'Information');
+});
+
+test('search pages 500 rows at a time until the data runs out', async () => {
+  const page = (n: number) => ({ hits: Array.from({ length: n }, (_, i) => ({ _timestamp: i, message: `m${i}` })) });
+  const { provider, calls } = setup([org, page(500), page(120)]);
+  const logs = await provider.searchLogs({ organization: 'org-id', sql: 'SELECT * FROM "s"', from: '1h', limit: 9999 });
+  assert.equal(logs.length, 620);
+  const bodies = calls.slice(1).map((c) => JSON.parse(String(c.init?.body)).query);
+  assert.deepEqual(bodies.map((q) => [q.from, q.size]), [[0, 500], [500, 500]]);
+});
+
+test('search stops paging at the requested limit', async () => {
+  const page = (n: number) => ({ hits: Array.from({ length: n }, (_, i) => ({ _timestamp: i, message: 'm' })) });
+  const { provider, calls } = setup([org, page(500), page(200)]);
+  const logs = await provider.searchLogs({ organization: 'org-id', sql: 'SELECT * FROM "s"', from: '1h', limit: 700 });
+  assert.equal(logs.length, 700);
+  assert.deepEqual(JSON.parse(String(calls[2]?.init?.body)).query.size, 200);
+});
+
+test('fetches request flows with one batched IN query on every id field and drops empty flows', async () => {
+  const schema = { schema: [{ name: 'rcid', type: 'Utf8' }, { name: 'trace_id', type: 'Utf8' }] };
+  const { provider, calls } = setup([org, { list: [{ name: 's' }] }, schema, { hits: [
+    { _timestamp: 2, rcid: 'r1', message: 'b' }, { _timestamp: 1, rcid: 'r1', message: 'a' }, { _timestamp: 3, trace_id: "t'2", message: 'c' },
+  ] }]);
+  const flows = await provider.fetchFlows({ organization: 'org-id', stream: 's', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z',
+    ids: [{ field: 'rcid', value: 'r1' }, { field: 'trace_id', value: "t'2" }, { field: 'missing_field', value: 'x' }] });
+  assert.deepEqual(flows.map((f) => [f.field, f.value, f.entries.length]), [['rcid', 'r1', 2], ['trace_id', "t'2", 1]]);
+  const query = JSON.parse(String(calls[3]?.init?.body)).query;
+  assert.equal(query.sql, `SELECT * FROM "s" WHERE "rcid" IN ('r1', 't''2', 'x') OR "trace_id" IN ('r1', 't''2', 'x') ORDER BY _timestamp DESC`);
+  assert.equal(query.start_time, Date.parse('2026-10-07T08:45:00Z') * 1000, 'window padded by 15 minutes');
 });

@@ -1,18 +1,8 @@
 import { config } from '../config.js';
-import { LogEntry, LogLevel, LogProvider, LogQuery, ProviderStatus } from '../types.js';
-import { normalizeLogLevel, parseTimeBound, resolveLevels } from './base.js';
+import { LogEntry, LogProvider, LogQuery, ProviderStatus } from '../types.js';
+import { LEVEL_ALIASES, normalizeLogLevel, parseTimeBound, resolveLevels } from './base.js';
 import { logger } from '../utils/logger.js';
 import { randomUUID } from 'node:crypto';
-
-/** Raw level names emitted by common loggers (Serilog, NLog, MEL, etc.) */
-const SEQ_LEVEL_ALIASES: Record<LogLevel, string[]> = {
-  Verbose: ['Verbose', 'Trace', 'VRB', 'TRC'],
-  Debug: ['Debug', 'DBG'],
-  Information: ['Information', 'Info', 'INF'],
-  Warning: ['Warning', 'Warn', 'WRN'],
-  Error: ['Error', 'ERR'],
-  Fatal: ['Fatal', 'Critical', 'FTL', 'CRT'],
-};
 
 export class SeqProvider implements LogProvider {
   public readonly name = 'seq';
@@ -47,7 +37,7 @@ export class SeqProvider implements LogProvider {
 
     // Push the level filter into Seq so `count` is not spent on events the service would drop.
     const levels = resolveLevels(params.level);
-    const levelFilter = levels && `@Level in [${levels.flatMap((l) => SEQ_LEVEL_ALIASES[l]).map((a) => `'${a}'`).join(', ')}] ci`;
+    const levelFilter = levels && `@Level in [${levels.flatMap((l) => LEVEL_ALIASES[l]).map((a) => `'${a}'`).join(', ')}] ci`;
     const filter = [params.query && `(${params.query})`, levelFilter].filter(Boolean).join(' and ');
     if (filter) {
       url.searchParams.set('filter', filter);

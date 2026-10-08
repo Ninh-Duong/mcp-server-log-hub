@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { LogHubService, defaultLogHubService } from './service.js';
 import { LOG_LEVELS } from './types.js';
 import { openObserveProvider } from './providers/index.js';
+import { parseTimeBound, resolveLevels } from './providers/base.js';
+import { MAX_ROWS } from './providers/openobserve.js';
+import { pickFlowIds, writeAiContextSnapshot } from './ai-context.js';
+import { config } from './config.js';
 import { logger } from './utils/logger.js';
 
 export interface RegisterToolsOptions {
@@ -184,6 +188,65 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
       return { content: [{ type: 'text', text: JSON.stringify({ organization, stream, fields }) }] };
     } catch (err) {
       return toolFailure('list_openobserve_stream_schema', err);
+    }
+  });
+
+  server.tool(`${prefix}list_openobserve_services`, 'List services that logged in an OpenObserve log stream, with log counts (and Error/Warning counts when the stream has a level field). Works for structured streams (service_name) and Kubernetes streams (deployment from pod name).', {
+    organization: z.string().min(1).describe('Organization identifier from list_openobserve_organizations.'),
+    stream: z.string().min(1).describe('Log stream from list_openobserve_streams.'),
+    from: z.string().default('1h').describe('Lower time bound (default 1h), ISO 8601 with timezone or relative duration.'),
+    to: z.string().optional().describe('Upper time bound, ISO 8601 with timezone; defaults to now.'),
+  }, async (args) => {
+    try {
+      const result = await openObserveProvider.listServices(args);
+      return { content: [{ type: 'text', text: JSON.stringify({ organization: args.organization, stream: args.stream, from: args.from, ...result }) }] };
+    } catch (err) {
+      return toolFailure('list_openobserve_services', err);
+    }
+  });
+
+  server.tool(`${prefix}get_openobserve_service_logs`, 'Get logs of one service (from list_openobserve_services) or all services in a stream, filtered by level, newest first. Use this instead of SQL for level filtering: Kubernetes streams have no level field.', {
+    organization: z.string().min(1), stream: z.string().min(1),
+    service: z.string().optional().describe('Service name from list_openobserve_services; omit for all services.'),
+    level: z.union([z.enum(LOG_LEVELS), z.array(z.enum(LOG_LEVELS)).min(1)]).optional()
+      .describe("One level = minimum severity (e.g. 'Warning' returns Warning, Error, Fatal); an array = exactly those levels."),
+    from: z.string().default('1h'), to: z.string().optional(), limit: z.number().int().min(1).max(500).default(50),
+  }, async ({ level, ...args }) => {
+    try {
+      const logs = await openObserveProvider.searchServiceLogs({ ...args, levels: resolveLevels(level) });
+      return { content: [{ type: 'text', text: JSON.stringify({ total: logs.length, logs }) }] };
+    } catch (err) {
+      return toolFailure('get_openobserve_service_logs', err);
+    }
+  });
+
+  server.tool(`${prefix}export_openobserve_logs`, `Fetch up to ${MAX_ROWS} logs of a service/level in a time range and save them as an ai-context snapshot (SUMMARY.md, patterns.json, logs/<service>/<level>.jsonl). Returns the SUMMARY.md path: read it first, then open only the log lines it points to.`, {
+    organization: z.string().min(1).describe('Organization identifier from list_openobserve_organizations.'),
+    stream: z.string().min(1).describe('Log stream from list_openobserve_streams.'),
+    service: z.string().optional().describe('Service name from list_openobserve_services; omit for all services.'),
+    level: z.union([z.enum(LOG_LEVELS), z.array(z.enum(LOG_LEVELS)).min(1)]).optional()
+      .describe("One level = minimum severity (e.g. 'Warning' returns Warning, Error, Fatal); an array = exactly those levels."),
+    from: z.string().default('1h').describe('Lower bound, ISO 8601 with timezone or relative duration (default 1h).'),
+    to: z.string().optional().describe('Upper bound, ISO 8601 with timezone; defaults to now.'),
+    max_rows: z.number().int().min(1).max(MAX_ROWS).default(1000).describe(`Rows to fetch (1-${MAX_ROWS}, default 1000); newest first when truncated.`),
+    include_flows: z.boolean().default(true).describe('Also fetch the full request flow (all services, all levels) for up to 3 rcid/trace_id values per error pattern, into flows/. Start diagnosis there.'),
+  }, async ({ level, max_rows, include_flows, ...args }) => {
+    try {
+      const from = parseTimeBound(args.from);
+      const to = args.to ? parseTimeBound(args.to) : new Date().toISOString();
+      if (!from || !to) throw new Error('Invalid time range');
+      const levels = resolveLevels(level);
+      const organization = (await openObserveProvider.listOrganizations()).find((org) => org.identifier === args.organization);
+      const logs = await openObserveProvider.searchServiceLogs({ ...args, levels, from, to, limit: max_rows });
+      const flowIds = include_flows ? pickFlowIds(logs) : [];
+      const flows = flowIds.length ? await openObserveProvider.fetchFlows({ organization: args.organization, stream: args.stream, ids: flowIds, from, to }) : [];
+      const snapshot = writeAiContextSnapshot(logs, {
+        provider: 'openobserve', env: config.openobserve.env, organization: organization?.name || args.organization,
+        stream: args.stream, service: args.service, levels, from, to, limit: max_rows,
+      }, { flows });
+      return { content: [{ type: 'text', text: JSON.stringify({ summaryPath: snapshot.summaryPath, rows: snapshot.rows, truncated: snapshot.truncated, flows: flows.length }) }] };
+    } catch (err) {
+      return toolFailure('export_openobserve_logs', err);
     }
   });
 
