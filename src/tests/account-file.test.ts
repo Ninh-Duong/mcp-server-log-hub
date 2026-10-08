@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { splitBasicCredential, writePrivateEnvFile } from '../config.js';
+import { ensureEnvFiles, openObserveEnvFile, splitBasicCredential, writePrivateEnvFile } from '../config.js';
 
 test('writes provider credentials to a private env file without changing values', () => {
   const file = join(tmpdir(), `log-hub-${randomUUID()}.env`);
@@ -26,4 +26,11 @@ test('splits a pasted Basic credential and leaves raw tokens alone', () => {
   assert.deepEqual(splitBasicCredential('me@example.test', basic), { email: 'svc@sa.internal', token: 'p4ss:word' });
   assert.deepEqual(splitBasicCredential('me@example.test', `Basic ${basic}`), { email: 'svc@sa.internal', token: 'p4ss:word' });
   assert.deepEqual(splitBasicCredential('me@example.test', 'raw-token'), { email: 'me@example.test', token: 'raw-token' });
+});
+
+test('ensureEnvFiles ensures dev, stg, and prod config files exist', () => {
+  ensureEnvFiles();
+  assert.equal(existsSync(openObserveEnvFile('dev')), true);
+  assert.equal(existsSync(openObserveEnvFile('stg')), true);
+  assert.equal(existsSync(openObserveEnvFile('prod')), true);
 });
