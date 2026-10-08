@@ -22,7 +22,7 @@ export interface OpenObserveServiceQuery {
 /** OpenObserve returns at most PAGE_SIZE rows per request; searchLogs pages up to MAX_ROWS. */
 const PAGE_SIZE = 500;
 export const MAX_ROWS = 5000;
-const FLOW_BATCH = 50;
+const FLOW_CONCURRENCY = 5;
 const FLOW_PAD_MS = 15 * 60_000;
 
 const quoteIdentifier =(value: string) => `"${value.replace(/"/g, '""')}"`;
@@ -271,7 +271,7 @@ export class OpenObserveProvider implements LogProvider {
 
   /**
    * Full request flows: every log in the stream sharing each correlation id, across services and levels.
-   * Ids are batched into `IN (...)` queries (one request per FLOW_BATCH ids) instead of one SELECT per id.
+   * One SELECT per id (FLOW_CONCURRENCY at a time), so a chatty request can't crowd out the others' rows.
    * The window is widened by FLOW_PAD_MS on both sides so a request that started before the range stays whole.
    */
   public async fetchFlows(params: { organization: string; stream: string; ids: Array<{ field: string; value: string }>; from: string; to: string }): Promise<RequestFlow[]> {
@@ -282,15 +282,11 @@ export class OpenObserveProvider implements LogProvider {
     const values = [...flows.keys()];
     const from = new Date(Date.parse(params.from) - FLOW_PAD_MS).toISOString();
     const to = new Date(Math.min(Date.now(), Date.parse(params.to) + FLOW_PAD_MS)).toISOString();
-    for (let i = 0; fields.length && i < values.length; i += FLOW_BATCH) {
-      const list = values.slice(i, i + FLOW_BATCH).map(quoteString).join(', ');
-      // ponytail: MAX_ROWS per batch; a batch of very chatty requests can be cut, lower FLOW_BATCH if flows look incomplete.
-      const rows = await this.searchLogs({ organization: params.organization, from, to, limit: MAX_ROWS,
-        sql: `SELECT * FROM ${quoteIdentifier(params.stream)} WHERE ${fields.map((f) => `${quoteIdentifier(f)} IN (${list})`).join(' OR ')} ORDER BY _timestamp DESC` });
-      for (const row of rows) {
-        const matched = new Set(fields.map((f) => String(row.metadata?.[f] ?? '')).filter((v) => flows.has(v)));
-        for (const value of matched) flows.get(value)!.entries.push(row);
-      }
+    for (let i = 0; fields.length && i < values.length; i += FLOW_CONCURRENCY) {
+      await Promise.all(values.slice(i, i + FLOW_CONCURRENCY).map(async (value) => {
+        flows.get(value)!.entries = await this.searchLogs({ organization: params.organization, from, to, limit: MAX_ROWS,
+          sql: `SELECT * FROM ${quoteIdentifier(params.stream)} WHERE ${fields.map((f) => `${quoteIdentifier(f)} = ${quoteString(value)}`).join(' OR ')} ORDER BY _timestamp DESC` });
+      }));
     }
     const loaded = [...flows.values()].filter((flow) => flow.entries.length);
     logger.info('openobserve.flows_loaded', { stream: params.stream, flows: loaded.length, rows: loaded.reduce((n, f) => n + f.entries.length, 0) });

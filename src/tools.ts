@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { LogHubService, defaultLogHubService } from './service.js';
-import { LOG_LEVELS } from './types.js';
+import { LOG_LEVELS, LogEntry, RequestFlow } from './types.js';
 import { openObserveProvider } from './providers/index.js';
 import { parseTimeBound, resolveLevels } from './providers/base.js';
 import { MAX_ROWS } from './providers/openobserve.js';
@@ -220,7 +220,7 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
     }
   });
 
-  server.tool(`${prefix}export_openobserve_logs`, `Fetch up to ${MAX_ROWS} logs of a service/level in a time range and save them as an ai-context snapshot (SUMMARY.md, patterns.json, logs/<service>/<level>.jsonl). Returns the SUMMARY.md path: read it first, then open only the log lines it points to.`, {
+  server.tool(`${prefix}export_openobserve_logs`, `Fetch up to ${MAX_ROWS} logs of a service/level in a time range and save them as an ai-context snapshot (SUMMARY.md, patterns.json, logs/<service>/<level>.jsonl, flows/<rcid>.jsonl). Returns the SUMMARY.md path: read it first, then open only the log lines it points to. To list a service's bugs: level 'Error' + service, then read the SUMMARY "Bugs" table (one row per bug, each with the full flow of every failing request). To diagnose one request: pass rcid (widen from, e.g. '7d', if nothing is found).`, {
     organization: z.string().min(1).describe('Organization identifier from list_openobserve_organizations.'),
     stream: z.string().min(1).describe('Log stream from list_openobserve_streams.'),
     service: z.string().optional().describe('Service name from list_openobserve_services; omit for all services.'),
@@ -229,20 +229,28 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
     from: z.string().default('1h').describe('Lower bound, ISO 8601 with timezone or relative duration (default 1h).'),
     to: z.string().optional().describe('Upper bound, ISO 8601 with timezone; defaults to now.'),
     max_rows: z.number().int().min(1).max(MAX_ROWS).default(1000).describe(`Rows to fetch (1-${MAX_ROWS}, default 1000); newest first when truncated.`),
-    include_flows: z.boolean().default(true).describe('Also fetch the full request flow (all services, all levels) for up to 3 rcid/trace_id values per error pattern, into flows/. Start diagnosis there.'),
-  }, async ({ level, max_rows, include_flows, ...args }) => {
+    include_flows: z.boolean().default(true).describe('Also fetch the full request flow (all services, all levels) of every distinct rcid/trace_id among the errors (up to 200), into flows/. Start diagnosis there.'),
+    rcid: z.string().min(1).optional().describe('Export only this one request: every log sharing this rcid/trace_id, across all services and levels. service/level are ignored.'),
+  }, async ({ level, max_rows, include_flows, rcid, ...args }) => {
     try {
       const from = parseTimeBound(args.from);
       const to = args.to ? parseTimeBound(args.to) : new Date().toISOString();
       if (!from || !to) throw new Error('Invalid time range');
-      const levels = resolveLevels(level);
+      const levels = rcid ? undefined : resolveLevels(level);
       const organization = (await openObserveProvider.listOrganizations()).find((org) => org.identifier === args.organization);
-      const logs = await openObserveProvider.searchServiceLogs({ ...args, levels, from, to, limit: max_rows });
-      const flowIds = include_flows ? pickFlowIds(logs) : [];
-      const flows = flowIds.length ? await openObserveProvider.fetchFlows({ organization: args.organization, stream: args.stream, ids: flowIds, from, to }) : [];
+      let logs: LogEntry[];
+      let flows: RequestFlow[];
+      if (rcid) {
+        flows = await openObserveProvider.fetchFlows({ organization: args.organization, stream: args.stream, ids: [{ field: 'rcid', value: rcid }], from, to });
+        logs = flows[0]?.entries ?? [];
+      } else {
+        logs = await openObserveProvider.searchServiceLogs({ ...args, levels, from, to, limit: max_rows });
+        const flowIds = include_flows ? pickFlowIds(logs) : [];
+        flows = flowIds.length ? await openObserveProvider.fetchFlows({ organization: args.organization, stream: args.stream, ids: flowIds, from, to }) : [];
+      }
       const snapshot = writeAiContextSnapshot(logs, {
         provider: 'openobserve', env: config.openobserve.env, organization: organization?.name || args.organization,
-        stream: args.stream, service: args.service, levels, from, to, limit: max_rows,
+        stream: args.stream, service: rcid ? `rcid-${rcid}` : args.service, levels, from, to, limit: rcid ? MAX_ROWS : max_rows,
       }, { flows });
       return { content: [{ type: 'text', text: JSON.stringify({ summaryPath: snapshot.summaryPath, rows: snapshot.rows, truncated: snapshot.truncated, flows: flows.length }) }] };
     } catch (err) {

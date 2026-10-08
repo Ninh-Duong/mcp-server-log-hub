@@ -50,7 +50,7 @@ test('writes a summary-first snapshot an AI agent can navigate', () => {
   assert.notEqual(first.dir, second.dir);
 });
 
-test('samples up to 3 correlation ids per error pattern, rcid before trace_id, one flow per id value', () => {
+test('picks every distinct error correlation id, rcid before trace_id, one flow per id value', () => {
   const logs = [
     ...[1, 2, 3, 4].map((i) => entry(`2026-10-07T09:0${i}:00Z`, 'Error', 'Api', `Order ${i} failed`, { rcid: `r${i}`, trace_id: `t${i}` })),
     entry('2026-10-07T09:05:00Z', 'Error', 'Api', 'Timeout calling DMS', { trace_id: 'tx' }),
@@ -59,24 +59,28 @@ test('samples up to 3 correlation ids per error pattern, rcid before trace_id, o
     entry('2026-10-07T09:07:00Z', 'Information', 'Api', 'ok', { rcid: 'info-only' }),
   ];
   assert.deepEqual(pickFlowIds(logs), [
-    { field: 'rcid', value: 'r4' }, { field: 'rcid', value: 'r3' }, { field: 'rcid', value: 'r2' },
+    { field: 'rcid', value: 'r4' }, { field: 'rcid', value: 'r3' }, { field: 'rcid', value: 'r2' }, { field: 'rcid', value: 'r1' },
     { field: 'trace_id', value: 'tx' },
   ], 'trace_id r4 is the same request as rcid r4');
+  assert.equal(pickFlowIds(logs, 3, 30).length, 4, 'per-pattern and total caps still apply');
 });
 
-test('writes request flows and points SUMMARY.md at them', () => {
+test('writes request flows and groups them by bug in SUMMARY.md', () => {
   const base = mkdtempSync(join(tmpdir(), 'ai-context-'));
-  const failing = entry('2026-10-07T09:00:02Z', 'Error', 'CRM.Customer.Api', 'Save failed', { rcid: 'r1' });
+  const failing = entry('2026-10-07T09:00:02Z', 'Error', 'CRM.Gateway', 'Request failed', { rcid: 'r1' });
   const flow = { field: 'rcid', value: 'r1', entries: [
     failing,
     entry('2026-10-07T09:00:00Z', 'Information', 'CRM.Gateway', 'POST /customers', { rcid: 'r1' }),
-    entry('2026-10-07T09:00:01Z', 'Warning', 'CRM.Customer.Api', 'Slow DB', { rcid: 'r1' }),
+    entry('2026-10-07T09:00:01Z', 'Error', 'CRM.Customer.Api', 'Save failed for 42', { rcid: 'r1' }),
   ] };
   const meta = { provider: 'openobserve', organization: 'o', stream: 's', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z', limit: 100 };
   const { dir, summaryPath } = writeAiContextSnapshot([failing], meta, { baseDir: base, flows: [flow] });
   const lines = readFileSync(join(dir, 'flows/rcid-r1.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  assert.deepEqual(lines.map((l) => l.service), ['CRM.Gateway', 'CRM.Customer.Api', 'CRM.Customer.Api'], 'oldest first across services');
-  assert.match(readFileSync(summaryPath, 'utf8'), /\| rcid=r1 \| 1 \| CRM\.Gateway → CRM\.Customer\.Api \| 3 \| 1 \| 2000 ms \| flows\/rcid-r1\.jsonl \|/);
+  assert.deepEqual(lines.map((l) => l.service), ['CRM.Gateway', 'CRM.Customer.Api', 'CRM.Gateway'], 'oldest first across services');
+  // Bug #1 is the gateway error the export found; the flow shows the real break happened upstream in Customer.Api.
+  assert.match(readFileSync(summaryPath, 'utf8'), /\| 1 \| 1 \| CRM\.Gateway \| `Request failed` \| 1 \| CRM\.Customer\.Api: Save failed for <n> \| flows\/rcid-r1\.jsonl \|/);
+  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.flows[0].pattern, 1);
 });
 
 test('trims very long flows around the first error', () => {

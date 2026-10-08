@@ -168,15 +168,30 @@ test('search stops paging at the requested limit', async () => {
   assert.deepEqual(JSON.parse(String(calls[2]?.init?.body)).query.size, 200);
 });
 
-test('fetches request flows with one batched IN query on every id field and drops empty flows', async () => {
+test('fetches each request flow with its own query on every id field and drops empty flows', async () => {
   const schema = { schema: [{ name: 'rcid', type: 'Utf8' }, { name: 'trace_id', type: 'Utf8' }] };
-  const { provider, calls } = setup([org, { list: [{ name: 's' }] }, schema, { hits: [
-    { _timestamp: 2, rcid: 'r1', message: 'b' }, { _timestamp: 1, rcid: 'r1', message: 'a' }, { _timestamp: 3, trace_id: "t'2", message: 'c' },
-  ] }]);
+  const { provider, calls } = setup([org, { list: [{ name: 's' }] }, schema]);
+  const hits: Record<string, unknown[]> = {
+    r1: [{ _timestamp: 2, rcid: 'r1', message: 'b' }, { _timestamp: 1, rcid: 'r1', message: 'a' }],
+    "t''2": [{ _timestamp: 3, trace_id: "t'2", message: 'c' }],
+    x: [],
+  };
+  const fetchSetup = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const sql: string | undefined = init?.body ? JSON.parse(String(init.body)).query?.sql : undefined;
+    if (!sql) return fetchSetup(url, init);
+    calls.push({ url: String(url), init });
+    const value = Object.keys(hits).find((v) => sql.includes(`= '${v}'`))!;
+    return new Response(JSON.stringify({ hits: hits[value] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
   const flows = await provider.fetchFlows({ organization: 'org-id', stream: 's', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z',
     ids: [{ field: 'rcid', value: 'r1' }, { field: 'trace_id', value: "t'2" }, { field: 'missing_field', value: 'x' }] });
   assert.deepEqual(flows.map((f) => [f.field, f.value, f.entries.length]), [['rcid', 'r1', 2], ['trace_id', "t'2", 1]]);
-  const query = JSON.parse(String(calls[3]?.init?.body)).query;
-  assert.equal(query.sql, `SELECT * FROM "s" WHERE "rcid" IN ('r1', 't''2', 'x') OR "trace_id" IN ('r1', 't''2', 'x') ORDER BY _timestamp DESC`);
-  assert.equal(query.start_time, Date.parse('2026-10-07T08:45:00Z') * 1000, 'window padded by 15 minutes');
+  const queries = calls.slice(3).map((call) => JSON.parse(String(call.init?.body)).query);
+  assert.deepEqual(queries.map((q) => q.sql).sort(), [
+    `SELECT * FROM "s" WHERE "rcid" = 'r1' OR "trace_id" = 'r1' ORDER BY _timestamp DESC`,
+    `SELECT * FROM "s" WHERE "rcid" = 't''2' OR "trace_id" = 't''2' ORDER BY _timestamp DESC`,
+    `SELECT * FROM "s" WHERE "rcid" = 'x' OR "trace_id" = 'x' ORDER BY _timestamp DESC`,
+  ]);
+  assert.equal(queries[0].start_time, Date.parse('2026-10-07T08:45:00Z') * 1000, 'window padded by 15 minutes');
 });

@@ -123,17 +123,25 @@ export async function runCliMenu(): Promise<void> {
     const common = { organization: organizationId, from, to, limit };
     let sql: string | undefined;
     if (mode === '3') sql = (await ask(`SQL [SELECT * FROM "${stream}"]: `)).trim() || `SELECT * FROM "${stream.replace(/"/g, '""')}"`;
+    // RCID: the whole request across services and levels (rcid / correlationid / trace_id), saved as one flow.
+    let rcidFlows: RequestFlow[] | undefined;
+    if (mode === '2') {
+      const rcid = (await ask('RCID: ')).trim();
+      if (!rcid) throw new Error('RCID is required');
+      rcidFlows = await openObserveProvider.fetchFlows({ organization: organizationId, stream, ids: [{ field: 'rcid', value: rcid }], from, to });
+      service = `rcid-${rcid}`;
+    }
     const logs = mode === '1'
       ? await openObserveProvider.searchServiceLogs({ ...common, stream, service, levels })
-      : mode === '2'
-        ? await openObserveProvider.findByRcid({ ...common, stream, field: (await ask('RCID field [rcid]: ')).trim() || 'rcid', rcid: (await ask('RCID: ')).trim() })
+      : rcidFlows
+        ? [...(rcidFlows[0]?.entries ?? [])].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
         : await openObserveProvider.searchLogs({ ...common, sql: sql! });
     console.log(`\nFound ${logs.length} logs${logs.length > SHOWN ? ` (showing newest ${SHOWN})` : ''}:`);
     for (const log of logs.slice(0, SHOWN)) console.log(`[${log.timestamp}] [${log.level}]${log.service ? ` [${log.service}]` : ''} ${log.message}`);
     if (logs.length > SHOWN) console.log(`... ${logs.length - SHOWN} more (save to ai-context to keep all)`);
     if (!logs.length || (await ask('\nSave to ai-context? (Y/n): ')).trim().toLowerCase() === 'n') return;
-    const flowIds = pickFlowIds(logs);
-    let flows: RequestFlow[] = [];
+    const flowIds = rcidFlows ? [] : pickFlowIds(logs);
+    let flows: RequestFlow[] = rcidFlows ?? [];
     if (flowIds.length && (await ask(`Fetch full request flows (rcid/trace_id) for ${flowIds.length} sampled errors? (Y/n): `)).trim().toLowerCase() !== 'n') {
       flows = await openObserveProvider.fetchFlows({ organization: organizationId, stream, ids: flowIds, from, to });
       console.log(`Loaded ${flows.length} flows (${flows.reduce((n, f) => n + f.entries.length, 0)} logs).`);

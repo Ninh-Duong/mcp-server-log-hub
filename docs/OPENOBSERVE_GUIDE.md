@@ -50,9 +50,13 @@ ai-context/
                      and an exception message is appended to show the root cause behind generic messages
     manifest.json    query parameters, to reproduce or compare snapshots
     logs/<service>/<level>.jsonl   one log per line, oldest first: ts, level, service, message, ids, attrs
-    flows/<field>-<id>.jsonl       full request timeline of a sampled error (all services, all levels)
+    flows/<field>-<id>.jsonl       full request timeline of one failing request (all services, all levels)
 ```
 
-**Request flows.** After saving, the CLI asks `Fetch full request flows (rcid/trace_id) for N sampled errors? (Y/n)` (the MCP export tool does this by default, `include_flows`). For each error pattern it takes up to 3 distinct correlation ids (`rcid`, then `correlationid`, `trace_id`, `traceid`; 30 at most), then fetches every log in the stream carrying that id on any of those fields, in batched `IN (...)` queries rather than one SELECT per id, with the window widened by 15 minutes on each side. The same id logged as `rcid` by one sink and `trace_id` by another is one flow. Flows over 500 lines keep 400 lines before the first error and 100 from it. `SUMMARY.md` lists each flow with its error pattern, service path (e.g. `CRM.Marketing.WorkerService → CRM.Core.Api`), row and error counts and duration; an agent should start diagnosis there. Errors without any correlation id (for example background jobs) have no flow.
+**Request flows.** After saving, the CLI asks `Fetch full request flows (rcid/trace_id) for N sampled errors? (Y/n)` (the MCP export tool does this by default, `include_flows`). It takes every distinct correlation id of the Error/Fatal logs (`rcid`, then `correlationid`, `trace_id`, `traceid`; 200 at most, most frequent bug first), then runs one SELECT per id (5 in parallel) for every log in the stream carrying that id on any of those fields, with the window widened by 15 minutes on each side. The same id logged as `rcid` by one sink and `trace_id` by another is one flow. Flows over 500 lines keep 400 lines before the first error and 100 from it. `SUMMARY.md` has a **Bugs** table: one row per error pattern with its request count, the first failing step (service + message of the first error in the newest flow, often upstream of the logged error) and its flow files; `manifest.json` → `flows` lists every flow with its bug #, service path, rows and duration. Errors without any correlation id (for example background jobs) have no flow.
+
+**One RCID.** `export_openobserve_logs` with `rcid` (or CLI search mode `2. RCID`) saves just that request's flow as a snapshot, so an agent can read the timeline and see which step failed. Widen `from` (e.g. `7d`) if nothing is found.
+
+**Bug list for a service.** `export_openobserve_logs` with `service` and `level: 'Error'` for the day, then read the SUMMARY Bugs table.
 
 `ids` holds correlation fields (rcid, correlationId, traceId, requestId); `attrs` holds the remaining non-empty fields. Snapshots contain real log data, possibly personal data, and are never committed; delete old snapshot folders by hand.

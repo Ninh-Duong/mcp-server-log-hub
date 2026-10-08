@@ -87,10 +87,11 @@ function patternOf(entry: LogEntry): { key: string; template: string; level: str
 }
 
 /**
- * Picks correlation ids of Error/Fatal logs to fetch full request flows for: up to `perPattern` distinct ids
- * (newest first) from each error pattern, most frequent pattern first, so the sample covers every kind of failure.
+ * Picks correlation ids of Error/Fatal logs to fetch full request flows for: every distinct id (newest first)
+ * of each error pattern, most frequent pattern first, so the cap cuts the long tail rather than a whole kind of failure.
  */
-export function pickFlowIds(entries: LogEntry[], perPattern = 3, max = 30, fields: string[] = FLOW_ID_FIELDS): Array<{ field: string; value: string }> {
+// ponytail: `max` caps one query per id; raise it or expose it as a tool param if 200 failing requests isn't enough.
+export function pickFlowIds(entries: LogEntry[], perPattern = Infinity, max = 200, fields: string[] = FLOW_ID_FIELDS): Array<{ field: string; value: string }> {
   const byPattern = new Map<string, Map<string, { field: string; value: string }>>();
   for (const entry of [...entries].sort((a, b) => b.timestamp.localeCompare(a.timestamp))) {
     if (entry.level !== 'Error' && entry.level !== 'Fatal') continue;
@@ -158,6 +159,15 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
   const ranked = [...patterns.values()].sort((a, b) => rank(a.level) - rank(b.level) || b.count - a.count);
   const truncated = entries.length >= meta.limit;
   const patternNumber = new Map(ranked.map((p, i) => [`${p.level}|${p.service}|${p.template}`, i + 1]));
+  // Each flow belongs to the bug (error pattern) whose log carried its id; that is how pickFlowIds chose it.
+  const bugOf = new Map<string, number>();
+  for (const entry of sorted) {
+    if (entry.level !== 'Error' && entry.level !== 'Fatal') continue;
+    for (const field of FLOW_ID_FIELDS) {
+      const value = entry.metadata?.[field];
+      if (value !== undefined && value !== null && value !== '' && !bugOf.has(String(value))) bugOf.set(String(value), patternNumber.get(patternOf(entry).key)!);
+    }
+  }
 
   // flows/<field>-<value>.jsonl: one request end to end across services, oldest first.
   const flowRows = flows.filter((flow) => flow.entries.length).map((flow) => {
@@ -173,7 +183,8 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
     return {
       id: `${flow.field}=${flow.value}`, file: toPosix(file), rows: kept.length === timeline.length ? `${timeline.length}` : `${kept.length} of ${timeline.length} (trimmed around first error)`, errors: failures.length,
       path: [...new Set(timeline.map((entry) => entry.service || '_unknown'))].join(' → '),
-      pattern: first ? patternNumber.get(patternOf(first).key) : undefined,
+      pattern: bugOf.get(flow.value) ?? (first ? patternNumber.get(patternOf(first).key) : undefined),
+      firstFailure: first ? `${first.service || '_unknown'}: ${messageTemplate(first.message)}` : undefined,
       durationMs: Date.parse(timeline[timeline.length - 1]!.timestamp) - Date.parse(timeline[0]!.timestamp),
     };
   });
@@ -209,18 +220,23 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
     ...ranked.slice(0, 20).map((p, i) => `| ${i + 1} | ${p.count} | ${p.level} | ${md(p.service)} | ${p.firstSeen} | ${p.lastSeen} | \`${md(p.template.length > 140 ? p.template.slice(0, 140) + '…' : p.template)}\` | ${p.example} |`),
     ...(flowRows.length ? [
       '',
-      '## Request flows (start here to diagnose)',
+      '## Bugs → request flows (start here to diagnose)',
       '',
-      `Full timeline of ${flowRows.length} sampled failing request(s): every log with the same correlation id, across all services and levels, oldest first. Up to 3 per error pattern.`,
+      `One row per error pattern (= one bug). Each flow file is one failing request (rcid / trace id) end to end, across all services and levels, oldest first: ${flowRows.length} flow(s) in total, all listed in manifest.json.`,
       '',
-      '| Flow | Pattern # | Path (services in order) | Rows | Errors | Duration | File |',
-      '|---|---:|---|---:|---:|---:|---|',
-      ...flowRows.map((f) => `| ${md(f.id)} | ${f.pattern ?? '-'} | ${md(f.path)} | ${f.rows} | ${f.errors} | ${f.durationMs} ms | ${f.file} |`),
+      '| Bug # | Count | Service | Pattern | Requests | First failing step (newest request) | Flows |',
+      '|---:|---:|---|---|---:|---|---|',
+      ...ranked.flatMap((p, i) => {
+        if (p.level !== 'Error' && p.level !== 'Fatal') return [];
+        const own = flowRows.filter((f) => f.pattern === i + 1);
+        const files = own.slice(0, 3).map((f) => f.file + (f.rows.includes(' of ') ? ` (${f.rows})` : '')).join(', ') + (own.length > 3 ? ` +${own.length - 3} more` : '');
+        return [`| ${i + 1} | ${p.count} | ${md(p.service)} | \`${md(p.template.slice(0, 120))}\` | ${own.length} | ${md(own[0]?.firstFailure?.slice(0, 160) ?? '-')} | ${files || '-'} |`];
+      }),
     ] : []),
     '',
     '## Files',
     '',
-    ...(flowRows.length ? ['- `flows/<id>.jsonl`: one failing request end to end; read the lines before the first Error to see what led to it.'] : []),
+    ...(flowRows.length ? ['- `flows/<id>.jsonl`: one failing request end to end; read the lines before the first Error to see what led to it. `manifest.json` → `flows` maps every flow to its bug #, services path, rows and duration.'] : []),
     '- `patterns.json`: every message pattern with count, first/last seen and an example `file:line`.',
     '- `logs/<service>/<level>.jsonl`: one JSON object per line, oldest first: `ts, level, service, message, ids, attrs` (empty fields removed).',
     '- `manifest.json`: query parameters to reproduce or compare this snapshot.',
