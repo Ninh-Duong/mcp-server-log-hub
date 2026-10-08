@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { messageTemplate, pickFlowIds, writeAiContextSnapshot } from '../ai-context.js';
+import { dropExported, messageTemplate, pickFlowIds, writeAiContextSnapshot } from '../ai-context.js';
 import { LogEntry } from '../types.js';
 
 const entry = (timestamp: string, level: string, service: string, message: string, metadata: Record<string, unknown> = {}): LogEntry =>
@@ -93,4 +93,23 @@ test('trims very long flows around the first error', () => {
   assert.equal(lines.length, 500);
   assert.equal(lines[400].message, 'step 700', 'first error keeps 400 lines of lead-up');
   assert.match(readFileSync(summaryPath, 'utf8'), /500 of 1000 \(trimmed around first error\)/);
+});
+
+test('drops logs already saved by an overlapping snapshot of the same stream and reports them', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ai-context-'));
+  const hour = (h: number) => `2026-10-07T${String(h).padStart(2, '0')}:00:00.000Z`;
+  const logs = (hours: number[]) => hours.map((h) => entry(hour(h), 'Error', 'Api', `Order ${h} failed`, { rcid: `r${h}` }));
+  const meta = (from: number, to: number, service?: string) => ({ provider: 'openobserve', env: 'dev', organization: 'org', stream: 'wecrm', service, from: hour(from), to: hour(to), limit: 100 });
+  writeAiContextSnapshot(logs([14, 15, 16, 17]), meta(14, 18), { baseDir: base });
+
+  const overlap = dropExported(logs([16, 17, 18, 19]), meta(16, 20, 'Api'), base);
+  assert.equal(overlap.duplicates, 2, 'any service/level of the stream counts');
+  assert.deepEqual(overlap.fresh.map((e) => e.timestamp), [hour(18), hour(19)]);
+  assert.equal(overlap.seenIn.length, 1);
+
+  assert.equal(dropExported(logs([20, 21]), meta(20, 22), base).duplicates, 0, 'non-overlapping snapshots are not read');
+
+  const second = writeAiContextSnapshot(overlap.fresh, { ...meta(16, 20), duplicates: overlap.duplicates }, { baseDir: base });
+  assert.match(readFileSync(second.summaryPath, 'utf8'), /\| Duplicates skipped \| 2 /);
+  assert.match(readFileSync(join(base, 'INDEX.md'), 'utf8'), /2 rows · 2 dup/);
 });

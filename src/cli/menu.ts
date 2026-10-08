@@ -8,7 +8,7 @@ import { logger } from '../utils/logger.js';
 import type { LogLevel, RequestFlow } from '../types.js';
 import { parseTimeBound } from '../providers/base.js';
 import { MAX_ROWS } from '../providers/openobserve.js';
-import { pickFlowIds, writeAiContextSnapshot } from '../ai-context.js';
+import { dropExported, pickFlowIds, writeAiContextSnapshot } from '../ai-context.js';
 
 /** Rows printed to the terminal; the saved snapshot keeps all of them. */
 const SHOWN = 50;
@@ -131,11 +131,20 @@ export async function runCliMenu(): Promise<void> {
       rcidFlows = await openObserveProvider.fetchFlows({ organization: organizationId, stream, ids: [{ field: 'rcid', value: rcid }], from, to });
       service = `rcid-${rcid}`;
     }
-    const logs = mode === '1'
+    let logs = mode === '1'
       ? await openObserveProvider.searchServiceLogs({ ...common, stream, service, levels })
       : rcidFlows
         ? [...(rcidFlows[0]?.entries ?? [])].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
         : await openObserveProvider.searchLogs({ ...common, sql: sql! });
+    const meta = { provider: 'openobserve', env: config.openobserve.env, organization: organization.name, stream, service, levels, from, to, limit, sql, duplicates: 0 };
+    // Overlapping scans (14h→18h, then 16h→20h): keep only rows no earlier snapshot of this stream holds. RCID flows stay whole.
+    if (!rcidFlows && logs.length) {
+      const { fresh, duplicates } = dropExported(logs, meta);
+      if (duplicates) console.log(`\nFetched ${logs.length} logs: ${fresh.length} new, ${duplicates} already in earlier snapshots (skipped).`);
+      if (!fresh.length) { console.log('Nothing new to save.'); return; }
+      logs = fresh;
+      meta.duplicates = duplicates;
+    }
     console.log(`\nFound ${logs.length} logs${logs.length > SHOWN ? ` (showing newest ${SHOWN})` : ''}:`);
     for (const log of logs.slice(0, SHOWN)) console.log(`[${log.timestamp}] [${log.level}]${log.service ? ` [${log.service}]` : ''} ${log.message}`);
     if (logs.length > SHOWN) console.log(`... ${logs.length - SHOWN} more (save to ai-context to keep all)`);
@@ -147,7 +156,7 @@ export async function runCliMenu(): Promise<void> {
       console.log(`Loaded ${flows.length} flows (${flows.reduce((n, f) => n + f.entries.length, 0)} logs).`);
     }
     const snapshot = writeAiContextSnapshot(logs, {
-      provider: 'openobserve', env: config.openobserve.env, organization: organization.name, stream, service, levels, from, to, limit, sql,
+      ...meta,
       note: logs.some((log) => !log.metadata?.severity && !log.metadata?.level) ? 'Some levels are inferred from log text (stream has no level field).' : undefined,
     }, { flows });
     console.log(`Saved ${snapshot.rows} logs${snapshot.truncated ? ' (truncated at the limit)' : ''}. AI entry point:\n  ${snapshot.summaryPath}`);
@@ -156,18 +165,36 @@ export async function runCliMenu(): Promise<void> {
   /** Preset or custom range, resolved once to ISO so every query in this search uses the same window. */
   async function askTimeRange(defaultChoice: number): Promise<{ from: string; to: string }> {
     const presets: Array<[string, string]> = [['Last 15 minutes', '15m'], ['Last 1 hour', '1h'], ['Last 6 hours', '6h'], ['Last 24 hours', '24h'], ['Last 7 days', '7d']];
-    console.log(`\nTime range:\n${presets.map(([label], index) => `  ${index + 1}. ${label}`).join('\n')}\n  ${presets.length + 1}. Custom (from / to)`);
-    const choice = Number((await ask(`Choose 1-${presets.length + 1} [${defaultChoice}]: `)).trim() || defaultChoice);
+    const dayChoice = presets.length + 1;
+    console.log(`\nTime range:\n${presets.map(([label], index) => `  ${index + 1}. ${label}`).join('\n')}\n  ${dayChoice}. Day + hours (24h)\n  ${dayChoice + 1}. Custom (from / to)`);
+    const choice = Number((await ask(`Choose 1-${dayChoice + 1} [${defaultChoice}]: `)).trim() || defaultChoice);
     let fromInput: string;
     let toInput = '';
     if (presets[choice - 1]) fromInput = presets[choice - 1]![1];
-    else if (choice === presets.length + 1) {
+    else if (choice === dayChoice) {
+      // Local day + 24h hours, e.g. yesterday 14 → 18.
+      const dayInput = (await ask('Day (YYYY-MM-DD, or 0 = today, 1 = yesterday, 2 = 2 days ago) [1]: ')).trim() || '1';
+      const daysAgo = /^\d{1,3}$/.test(dayInput);
+      const day = daysAgo ? new Date() : new Date(`${dayInput}T00:00`);
+      if (daysAgo) day.setDate(day.getDate() - Number(dayInput));
+      const at = (input: string) => {
+        const match = input.trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+        if (!match || isNaN(day.getTime()) || Number(match[1]) > 24 || Number(match[2] ?? 0) > 59) throw new Error('Invalid day or hour: use YYYY-MM-DD or 0/1/2, and hours 0-24 (optionally :mm)');
+        return new Date(day.getFullYear(), day.getMonth(), day.getDate(), Number(match[1]), Number(match[2] ?? 0)).toISOString();
+      };
+      fromInput = at(await ask('From hour (e.g. 14 or 14:30): '));
+      toInput = at(await ask('To hour (e.g. 18; 24 = end of day): '));
+    } else if (choice === dayChoice + 1) {
       fromInput = (await ask('From (e.g. 2026-10-07 09:00 local, ISO 8601, or 30m): ')).trim();
       toInput = (await ask('To (blank = now): ')).trim();
     } else throw new Error('Invalid time range selection');
+    const now = new Date().toISOString();
     const from = parseTimeBound(fromInput);
-    const to = toInput ? parseTimeBound(toInput) : new Date().toISOString();
+    let to = toInput ? parseTimeBound(toInput) : now;
     if (!from || !to || Date.parse(from) >= Date.parse(to)) throw new Error('Invalid time range: use local "YYYY-MM-DD HH:mm", ISO 8601, or 15m/1h/7d, with From before To');
+    if (from >= now) throw new Error(`From ${new Date(from).toLocaleString()} is in the future (now ${new Date(now).toLocaleString()}); pick an earlier day or hour`);
+    // A range ending later today stops at now, so snapshots record what they actually cover.
+    if (to > now) to = now;
     console.log(`Range: ${new Date(from).toLocaleString()} → ${new Date(to).toLocaleString()} local (${from} → ${to})`);
     return { from, to };
   }

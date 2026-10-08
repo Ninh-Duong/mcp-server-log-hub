@@ -83,7 +83,7 @@ this.register(new NewProvider());
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
   - `level` *(optional string or string[])*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`. One level = minimum severity (`'Warning'` → Warning, Error, Fatal); an array = exactly those levels.
 
-OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `list_openobserve_services`, `get_openobserve_service_logs`, `export_openobserve_logs` (writes an `ai-context/` snapshot; read its `SUMMARY.md` first), `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
+OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `list_openobserve_services`, `get_openobserve_service_logs`, `export_openobserve_logs` (writes an `ai-context/` snapshot; read its `SUMMARY.md` first; `skip_duplicates`, default true, drops rows already saved by an overlapping snapshot), `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
 
 ---
 

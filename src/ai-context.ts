@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { AI_CONTEXT_DIR } from './config.js';
 import { LOG_LEVELS, LogEntry, LogLevel, RequestFlow } from './types.js';
@@ -27,6 +27,8 @@ export interface SnapshotMeta {
   sql?: string;
   /** Extra caveat shown in SUMMARY.md */
   note?: string;
+  /** Fetched rows dropped by dropExported because an earlier snapshot already holds them */
+  duplicates?: number;
 }
 
 export interface SnapshotResult { dir: string; summaryPath: string; rows: number; truncated: boolean }
@@ -110,6 +112,34 @@ export function pickFlowIds(entries: LogEntry[], perPattern = Infinity, max = 20
   return [...picked.values()];
 }
 
+/** ai-context/<provider>/<env>/<org>/<stream>: every snapshot of one stream lives here. */
+function snapshotParent(meta: SnapshotMeta, baseDir: string): string {
+  return join(baseDir, safe(meta.provider), safe(meta.env || 'default'), safe(meta.organization), safe(meta.stream));
+}
+
+/**
+ * Drops entries already saved by an earlier snapshot of the same stream (any service/level), so overlapping scans
+ * (14h→18h, then 16h→20h) only keep new rows. A row is a duplicate when its compact JSONL line is identical.
+ */
+// ponytail: re-reads the jsonl of every overlapping snapshot each run; keep a per-stream index if ai-context grows large.
+export function dropExported(entries: LogEntry[], meta: SnapshotMeta, baseDir = AI_CONTEXT_DIR): { fresh: LogEntry[]; duplicates: number; seenIn: string[] } {
+  const parent = snapshotParent(meta, baseDir);
+  const seen = new Set<string>();
+  const seenIn: string[] = [];
+  for (const name of existsSync(parent) ? readdirSync(parent) : []) {
+    const dir = join(parent, name);
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as { from: string; to: string };
+      if (manifest.to < meta.from || manifest.from > meta.to) continue;
+      const files = readdirSync(join(dir, 'logs'), { recursive: true }).map(String).filter((file) => file.endsWith('.jsonl'));
+      for (const file of files) for (const line of readFileSync(join(dir, 'logs', file), 'utf8').split('\n')) if (line) seen.add(line);
+      seenIn.push(name);
+    } catch { /* not a snapshot, or one without logs */ }
+  }
+  const fresh = seen.size ? entries.filter((entry) => !seen.has(JSON.stringify(compact(entry)))) : entries;
+  return { fresh, duplicates: entries.length - fresh.length, seenIn };
+}
+
 export interface SnapshotOptions {
   baseDir?: string;
   /** Full request flows of sampled errors, written to flows/ and summarized in SUMMARY.md */
@@ -119,7 +149,7 @@ export interface SnapshotOptions {
 export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, { baseDir = AI_CONTEXT_DIR, flows = [] }: SnapshotOptions = {}): SnapshotResult {
   const createdAt = new Date().toISOString();
   const levelsLabel = meta.levels?.length ? meta.levels.join('-').toLowerCase() : 'all-levels';
-  const parent = join(baseDir, safe(meta.provider), safe(meta.env || 'default'), safe(meta.organization), safe(meta.stream));
+  const parent = snapshotParent(meta, baseDir);
   const name = `${stamp(createdAt)}_${safe(meta.service || 'all-services')}_${safe(levelsLabel)}`;
   let dir = join(parent, name);
   for (let n = 2; existsSync(dir); n++) dir = join(parent, `${name}_${n}`);
@@ -157,7 +187,7 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
 
   const rank = (level: string) => SEVERITY.indexOf(level as LogLevel) === -1 ? SEVERITY.length : SEVERITY.indexOf(level as LogLevel);
   const ranked = [...patterns.values()].sort((a, b) => rank(a.level) - rank(b.level) || b.count - a.count);
-  const truncated = entries.length >= meta.limit;
+  const truncated = entries.length + (meta.duplicates ?? 0) >= meta.limit;
   const patternNumber = new Map(ranked.map((p, i) => [`${p.level}|${p.service}|${p.template}`, i + 1]));
   // Each flow belongs to the bug (error pattern) whose log carried its id; that is how pickFlowIds chose it.
   const bugOf = new Map<string, number>();
@@ -202,6 +232,7 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
     `| Filter | service ${md(meta.service || 'all')} · levels ${meta.levels?.join(', ') || 'all'} |`,
     `| Time range (UTC) | ${meta.from} → ${meta.to} |`,
     `| Rows | ${entries.length} (limit ${meta.limit})${truncated ? ' — **TRUNCATED: only the newest rows were fetched; narrow the time range for full coverage**' : ''} |`,
+    ...(meta.duplicates ? [`| Duplicates skipped | ${meta.duplicates} (already in earlier snapshots of this stream, see INDEX.md) |`] : []),
     `| Patterns | ${ranked.length} distinct (see patterns.json) |`,
     `| Created | ${createdAt} |`,
     ...(meta.sql ? [`| SQL | \`${md(meta.sql)}\` |`] : []),
@@ -254,7 +285,7 @@ export function writeAiContextSnapshot(entries: LogEntry[], meta: SnapshotMeta, 
   const indexPath = join(baseDir, 'INDEX.md');
   const previous = existsSync(indexPath) ? readFileSync(indexPath, 'utf8').replace(INDEX_HEADER, '') : '';
   const link = relative(baseDir, summaryPath).split(sep).join('/');
-  const line = `- ${createdAt.slice(0, 16)}Z · ${meta.provider}/${meta.env || 'default'}/${meta.organization}/${meta.stream} · ${meta.service || 'all services'} · ${meta.levels?.join(',') || 'all levels'} · ${meta.from} → ${meta.to} · ${entries.length} rows${truncated ? ' (truncated)' : ''} → [SUMMARY](${link})\n`;
+  const line = `- ${createdAt.slice(0, 16)}Z · ${meta.provider}/${meta.env || 'default'}/${meta.organization}/${meta.stream} · ${meta.service || 'all services'} · ${meta.levels?.join(',') || 'all levels'} · ${meta.from} → ${meta.to} · ${entries.length} rows${meta.duplicates ? ` · ${meta.duplicates} dup` : ''}${truncated ? ' (truncated)' : ''} → [SUMMARY](${link})\n`;
   writeFileSync(indexPath, INDEX_HEADER + line + previous, 'utf8');
 
   return { dir, summaryPath, rows: entries.length, truncated };

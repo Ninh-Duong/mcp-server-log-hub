@@ -59,4 +59,6 @@ ai-context/
 
 **Bug list for a service.** `export_openobserve_logs` with `service` and `level: 'Error'` for the day, then read the SUMMARY Bugs table.
 
+**Overlapping scans.** Scanning 14h→18h and then 16h→20h saves the 16h→18h logs only once. Rows already in an earlier snapshot of the same stream are skipped (`skip_duplicates`, default true); the count is printed by the CLI, returned as `duplicates`, and shown in SUMMARY.md and INDEX.md. To pick a fixed window in the CLI, choose `Day + hours (24h)`: day `1` (yesterday), from `14`, to `18`. Over MCP, pass ISO `from`/`to`.
+
 `ids` holds correlation fields (rcid, correlationId, traceId, requestId); `attrs` holds the remaining non-empty fields. Snapshots contain real log data, possibly personal data, and are never committed; delete old snapshot folders by hand.

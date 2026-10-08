@@ -5,7 +5,7 @@ import { LOG_LEVELS, LogEntry, RequestFlow } from './types.js';
 import { openObserveProvider } from './providers/index.js';
 import { parseTimeBound, resolveLevels } from './providers/base.js';
 import { MAX_ROWS } from './providers/openobserve.js';
-import { pickFlowIds, writeAiContextSnapshot } from './ai-context.js';
+import { dropExported, pickFlowIds, writeAiContextSnapshot } from './ai-context.js';
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
 
@@ -231,13 +231,18 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
     max_rows: z.number().int().min(1).max(MAX_ROWS).default(1000).describe(`Rows to fetch (1-${MAX_ROWS}, default 1000); newest first when truncated.`),
     include_flows: z.boolean().default(true).describe('Also fetch the full request flow (all services, all levels) of every distinct rcid/trace_id among the errors (up to 200), into flows/. Start diagnosis there.'),
     rcid: z.string().min(1).optional().describe('Export only this one request: every log sharing this rcid/trace_id, across all services and levels. service/level are ignored.'),
-  }, async ({ level, max_rows, include_flows, rcid, ...args }) => {
+    skip_duplicates: z.boolean().default(true).describe('Drop logs already saved by an earlier snapshot of this stream (overlapping ranges), so only new rows are written. Ignored with rcid.'),
+  }, async ({ level, max_rows, include_flows, rcid, skip_duplicates, ...args }) => {
     try {
       const from = parseTimeBound(args.from);
       const to = args.to ? parseTimeBound(args.to) : new Date().toISOString();
       if (!from || !to) throw new Error('Invalid time range');
       const levels = rcid ? undefined : resolveLevels(level);
       const organization = (await openObserveProvider.listOrganizations()).find((org) => org.identifier === args.organization);
+      const meta = {
+        provider: 'openobserve', env: config.openobserve.env, organization: organization?.name || args.organization,
+        stream: args.stream, service: rcid ? `rcid-${rcid}` : args.service, levels, from, to, limit: rcid ? MAX_ROWS : max_rows, duplicates: 0,
+      };
       let logs: LogEntry[];
       let flows: RequestFlow[];
       if (rcid) {
@@ -245,14 +250,20 @@ Never claim a root cause from a matching timestamp alone. Do not expose credenti
         logs = flows[0]?.entries ?? [];
       } else {
         logs = await openObserveProvider.searchServiceLogs({ ...args, levels, from, to, limit: max_rows });
+        if (skip_duplicates) {
+          const { fresh, duplicates, seenIn } = dropExported(logs, meta);
+          if (logs.length && !fresh.length) {
+            return { content: [{ type: 'text', text: JSON.stringify({ rows: 0, duplicates, message: `All ${duplicates} logs are already in earlier snapshots; nothing new saved.`, seenIn }) }] };
+          }
+          logs = fresh;
+          meta.duplicates = duplicates;
+        }
+        // Flows only for errors not exported before.
         const flowIds = include_flows ? pickFlowIds(logs) : [];
         flows = flowIds.length ? await openObserveProvider.fetchFlows({ organization: args.organization, stream: args.stream, ids: flowIds, from, to }) : [];
       }
-      const snapshot = writeAiContextSnapshot(logs, {
-        provider: 'openobserve', env: config.openobserve.env, organization: organization?.name || args.organization,
-        stream: args.stream, service: rcid ? `rcid-${rcid}` : args.service, levels, from, to, limit: rcid ? MAX_ROWS : max_rows,
-      }, { flows });
-      return { content: [{ type: 'text', text: JSON.stringify({ summaryPath: snapshot.summaryPath, rows: snapshot.rows, truncated: snapshot.truncated, flows: flows.length }) }] };
+      const snapshot = writeAiContextSnapshot(logs, meta, { flows });
+      return { content: [{ type: 'text', text: JSON.stringify({ summaryPath: snapshot.summaryPath, rows: snapshot.rows, duplicates: meta.duplicates, truncated: snapshot.truncated, flows: flows.length }) }] };
     } catch (err) {
       return toolFailure('export_openobserve_logs', err);
     }
