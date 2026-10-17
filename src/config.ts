@@ -1,0 +1,135 @@
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Calculate relative project root portably across environments
+const currentDir = dirname(fileURLToPath(import.meta.url));
+export const PROJECT_ROOT = resolve(currentDir, '..');
+// The root .env (see .env.example) loads first so it can move the folders below; variables already set win.
+loadEnvFile(resolve(PROJECT_ROOT, '.env'));
+export const LOGS_DIR = resolve(PROJECT_ROOT, process.env.LOG_DIR || 'logs');
+export const CONFIG_DIR = resolve(PROJECT_ROOT, process.env.CONFIG_DIR || 'config');
+export const AI_CONTEXT_DIR = resolve(PROJECT_ROOT, process.env.AI_CONTEXT_DIR || 'ai-context');
+/** Time zone of ai-context export folder names (log timestamps inside stay UTC). */
+export const AI_CONTEXT_TIME_ZONE = process.env.AI_CONTEXT_TIME_ZONE || 'UTC';
+
+/** Each OpenObserve environment has its own account file: config/openobserve.<env>.env */
+export const OPENOBSERVE_ENVS = ['dev', 'stg', 'prod'] as const;
+export type OpenObserveEnv = (typeof OPENOBSERVE_ENVS)[number];
+export const openObserveEnvFile = (env: OpenObserveEnv): string => resolve(CONFIG_DIR, `openobserve.${env}.env`);
+
+/**
+ * Creates the account files to fill in, from their examples, when missing: config/openobserve.<env>.env per
+ * environment and config/seq.env. Their example values are placeholders (see `real`), not an account.
+ */
+export function ensureEnvFiles(): void {
+  const copies: Array<[string, string]> = [
+    ...OPENOBSERVE_ENVS.map((env): [string, string] => ['openobserve.env.example', openObserveEnvFile(env)]),
+    ['seq.env.example', resolve(CONFIG_DIR, 'seq.env')],
+  ];
+  for (const [example, file] of copies) {
+    try {
+      if (!existsSync(file) && existsSync(resolve(CONFIG_DIR, example))) copyFileSync(resolve(CONFIG_DIR, example), file);
+    } catch {
+      // A read-only config folder must not stop startup; the provider then reports what is missing.
+    }
+  }
+}
+
+/** Example placeholders (your_..., ...@example.com) count as unset. */
+const real = (value: string | undefined): string => (value && !/^your_|@example\.com$/i.test(value) ? value : '');
+
+/**
+ * Lightweight stdlib .env parser (avoids external dotenv dependency)
+ */
+function readEnvFile(envPath: string): Record<string, string> {
+  const values: Record<string, string> = {};
+  if (!existsSync(envPath)) return values;
+
+  try {
+    const content = readFileSync(envPath, 'utf8');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx === -1) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      values[key] = val;
+    }
+  } catch {
+    // Ignore read errors silently
+  }
+  return values;
+}
+
+function loadEnvFile(envPath: string): void {
+  for (const [key, val] of Object.entries(readEnvFile(envPath))) {
+    if (process.env[key] === undefined) process.env[key] = val;
+  }
+}
+
+ensureEnvFiles();
+// The CLI saves the Seq account here; SEQ_* variables set by the MCP client win.
+loadEnvFile(resolve(CONFIG_DIR, 'seq.env'));
+
+/** Accepts a raw token or a pasted Basic credential (base64 "email:password", optionally prefixed "Basic "). */
+export function splitBasicCredential(email: string, token: string): { email: string; token: string } {
+  const encoded = token.replace(/^(?:authorization:\s*)?basic\s+/i, '');
+  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+  const separator = decoded.indexOf(':');
+  if (separator > 0 && Buffer.from(decoded).toString('base64') === encoded && /^[^\s:@]+@[^\s:@]+\.[^\s:@]+$/.test(decoded.slice(0, separator))) {
+    return { email: decoded.slice(0, separator), token: decoded.slice(separator + 1) };
+  }
+  return { email, token };
+}
+
+const openObserveAccount = (url: string | undefined, email: string | undefined, token: string | undefined) => ({
+  url: real(url).replace(/\/+$/, ''),
+  ...splitBasicCredential(real(email), real(token)),
+});
+
+export const config = {
+  seq: {
+    serverUrl: real(process.env.SEQ_SERVER_URL).replace(/\/+$/, ''),
+    apiKey: real(process.env.SEQ_API_KEY),
+  },
+  openobserve: {
+    /** Selected environment, or undefined when using OPENOBSERVE_* variables directly */
+    env: undefined as OpenObserveEnv | undefined,
+    ...openObserveAccount(process.env.OPENOBSERVE_URL, process.env.OPENOBSERVE_EMAIL, process.env.OPENOBSERVE_TOKEN),
+  },
+};
+
+/** The account saved for `env` in config/openobserve.<env>.env, without making it active. */
+export function openObserveAccountFor(env: string): { env: OpenObserveEnv; url: string; email: string; token: string } {
+  const key = env.toLowerCase() as OpenObserveEnv;
+  if (!OPENOBSERVE_ENVS.includes(key)) throw new Error(`Unknown OpenObserve environment '${env}'. Use ${OPENOBSERVE_ENVS.join(', ')}`);
+  const saved = readEnvFile(openObserveEnvFile(key));
+  return { env: key, ...openObserveAccount(saved.OPENOBSERVE_URL, saved.OPENOBSERVE_EMAIL, saved.OPENOBSERVE_TOKEN) };
+}
+
+/** Switches the active OpenObserve account to the one saved for `env`. */
+export function useOpenObserveEnv(env: string): void {
+  config.openobserve = openObserveAccountFor(env);
+}
+
+// MCP mode picks its environment at startup, e.g. "env": { "OPENOBSERVE_ENV": "dev" } in the MCP client config.
+// Without it (and without OPENOBSERVE_URL), the DEV account is used when its file has a URL.
+const requestedEnv = (process.env.OPENOBSERVE_ENV || '').toLowerCase() as OpenObserveEnv;
+if (OPENOBSERVE_ENVS.includes(requestedEnv)) useOpenObserveEnv(requestedEnv);
+else if (!config.openobserve.url && openObserveAccountFor('dev').url) useOpenObserveEnv('dev');
+
+/** Save CLI account settings without putting credentials in tracked files. */
+export function writePrivateEnvFile(file: string, entries: Record<string, string>): void {
+  for (const [key, value] of Object.entries(entries)) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key)) throw new Error('Invalid account setting name');
+    if (/[\r\n]/.test(value)) throw new Error('Account values cannot contain a newline');
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, Object.entries(entries).map(([key, value]) => `${key}=${value}\n`).join(''), { encoding: 'utf8', mode: 0o600 });
+  chmodSync(file, 0o600);
+}
