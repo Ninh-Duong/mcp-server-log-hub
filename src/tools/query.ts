@@ -9,8 +9,8 @@ export function registerBugPrompt(server: McpServer, prefix: string): void {
     title: 'Investigate an API bug with source code and logs',
     description: 'Guide an AI agent through source inspection, bounded OpenObserve SQL searches, and evidence-backed bug analysis.',
     argsSchema: {
-      bug_report: z.string().min(1).describe('Observed behavior, expected behavior, and error details.'),
-      api_endpoint: z.string().min(1).describe('Affected HTTP method and route.'),
+      bug_report: z.string().default('Investigate recent API bugs and errors.').describe('Observed behavior, expected behavior, and error details.'),
+      api_endpoint: z.string().default('All endpoints').describe('Affected HTTP method and route.'),
       observed_at: z.string().optional().describe('Approximate occurrence time with timezone.'),
       organization: z.string().optional().describe('Known OpenObserve organization identifier.'),
       rcid: z.string().optional().describe('Known request/correlation ID, if available.'),

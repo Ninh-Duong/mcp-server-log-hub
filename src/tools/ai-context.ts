@@ -32,7 +32,7 @@ export function registerAnalyzePrompt(server: McpServer, prefix: string): void {
     title: 'Analyze an ai-context log export',
     description: 'Answer a question from an encrypted ai-context export, reading it only through read_ai_context, and compare it with the source code of the current workspace.',
     argsSchema: {
-      question: z.string().min(1).describe('What to find out, e.g. "Why do order saves fail?"'),
+      question: z.string().default('Analyze the latest ai-context export and summarize any bugs or errors.').describe('What to find out, e.g. "Why do order saves fail?"'),
       snapshot: z.string().optional().describe('Export folder from list_ai_context_snapshots; omit to pick the newest matching one.'),
     },
   }, ({ question, snapshot }) => ({
