@@ -40,7 +40,8 @@ export const LHUB = '.lhub';
 const MAGIC = 'LHUB3\n';
 const FRAME_HEAD = 4 + 8 + 8 + 12;
 
-// The HKDF info string is part of the key: changing it makes every existing export unreadable.
+// The HKDF info string is part of the key: changing it makes every existing export unreadable. It keeps the project's
+// earlier name on purpose, like MAGIC and the .lhub extension: these are file-format constants, not branding.
 const deriveKey = (orgKey: string, salt: Buffer) => Buffer.from(hkdfSync('sha256', orgKey, salt, 'mcp-log-hub/ai-context/v1', 32));
 
 // ponytail: Brotli quality 9 (11 is ~15% smaller but far slower on large files).

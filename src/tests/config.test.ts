@@ -8,7 +8,7 @@ import { CONFIG_DIR, PROJECT_ROOT, ensureEnvFiles, openObserveAccountFor, openOb
 import { runModule } from './helpers.js';
 
 test('writes provider credentials to a private env file without changing values', () => {
-  const file = join(tmpdir(), `log-hub-${randomUUID()}.env`);
+  const file = join(tmpdir(), `mcp-logs-${randomUUID()}.env`);
   try {
     writePrivateEnvFile(file, { OPENOBSERVE_EMAIL: 'reader@example.test', OPENOBSERVE_TOKEN: 'abc=def' });
     assert.equal(readFileSync(file, 'utf8'), 'OPENOBSERVE_EMAIL=reader@example.test\nOPENOBSERVE_TOKEN=abc=def\n');
@@ -18,7 +18,7 @@ test('writes provider credentials to a private env file without changing values'
 });
 
 test('rejects newlines in account values and invalid setting names', () => {
-  const file = join(tmpdir(), `log-hub-${randomUUID()}.env`);
+  const file = join(tmpdir(), `mcp-logs-${randomUUID()}.env`);
   assert.throws(() => writePrivateEnvFile(file, { OPENOBSERVE_TOKEN: 'first\nOTHER=leak' }), /newline/);
   assert.throws(() => writePrivateEnvFile(file, { 'bad-name': 'x' }), /Invalid account setting name/);
   assert.equal(existsSync(file), false);
@@ -51,7 +51,7 @@ test('reads an account file: comments, quotes, CRLF, "=" inside values, trailing
 
 const printAccount = `const { config } = await import('./dist/config.js'); process.stdout.write(JSON.stringify({ openobserve: config.openobserve, seq: config.seq }));`;
 const configDir = (files: Record<string, string>) => {
-  const dir = mkdtempSync(join(tmpdir(), 'log-hub-config-'));
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-logs-config-'));
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   return dir;
 };

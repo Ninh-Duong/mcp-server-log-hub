@@ -1,4 +1,4 @@
-# mcp-server-log-hub
+# mcp-server-logs
 
 > **Model Context Protocol (MCP) server for Seq and OpenObserve log search.**
 
@@ -11,7 +11,7 @@ Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat,
 - **Multi-Provider Hub**: Query logs from **Seq** and **OpenObserve** through a unified interface.
 - **Dual-Mode Architecture**:
   - **Standalone Mode**: Runs over stdio JSON-RPC or interactive terminal CLI.
-  - **Parent MCP Integration**: Can be mounted in-process into a Master MCP orchestrator via `registerLogHubTools()` with custom namespaces.
+  - **Parent MCP Integration**: Can be mounted in-process into a Master MCP orchestrator via `registerLogsTools()` with custom namespaces.
 - **Strict Stdio Safety**: `stdout` is 100% reserved for JSON-RPC; diagnostics and errors are isolated to `process.stderr` and `logs/mcp-process.log`.
 - **Zero-Bloat Engineering (Ponytail)**: Only 2 dependencies (`@modelcontextprotocol/sdk` and `zod`). Uses native `fetch`, native `node:readline`, and stdlib file streaming.
 - **Preflight Diagnostics**: Automated startup health scanner checking Node version, directory write permissions, and provider credentials.
@@ -28,18 +28,18 @@ Requires Node.js 22+. Pick one:
 # From source (any OS): start.mjs checks Node, runs `npm ci` when node_modules is missing or
 # older than package-lock.json, rebuilds when src/ changed, then starts the server.
 git clone <REPO_URL>
-cd mcp-server-log-hub
+cd mcp-server-logs
 node start.mjs            # same as `npm start`; add --cli or --preflight
 
 # As a package: build a tarball and install it anywhere
-npm pack                  # -> mcp-server-log-hub-1.0.0.tgz (dist + config examples only)
-npm i -g ./mcp-server-log-hub-1.0.0.tgz
-mcp-server-log-hub --preflight
+npm pack                  # -> mcp-server-logs-1.0.0.tgz (dist + config examples only)
+npm i -g ./mcp-server-logs-1.0.0.tgz
+mcp-server-logs --preflight
 ```
 
 Which OpenObserve account MCP mode uses:
-- `OPENOBSERVE_ENV` (`dev`, `stg` or `prod`) picks `config/openobserve.<env>.env`; that file's values are used even if `OPENOBSERVE_*` variables are set. Register one MCP server entry per environment if you need several.
-- Without `OPENOBSERVE_ENV`: `OPENOBSERVE_URL` / `OPENOBSERVE_EMAIL` / `OPENOBSERVE_TOKEN` from the MCP client `env` block, else `config/openobserve.dev.env` when it has a URL.
+- One server serves every environment: OpenObserve tools take `env` (`dev`, `stg` or `prod`) and use `config/openobserve.<env>.env` for that call. Register the server once (`mcp-logs`), never once per environment.
+- Calls without `env` use the default: `OPENOBSERVE_ENV` picks `config/openobserve.<env>.env` (its values win over `OPENOBSERVE_*` variables); without it, `OPENOBSERVE_URL` / `OPENOBSERVE_EMAIL` / `OPENOBSERVE_TOKEN` from the MCP client `env` block, else `config/openobserve.dev.env` when it has a URL.
 - Seq: `SEQ_SERVER_URL` / `SEQ_API_KEY` variables win over `config/seq.env`.
 
 Optional settings (`LOG_DIR`, `AI_CONTEXT_DIR`, `OPENOBSERVE_ENV`, `AI_CONTEXT_TIME_ZONE`) can go in a root `.env`; see `.env.example`.
@@ -65,24 +65,25 @@ Copy a block, replace the `<…>` values, paste it into your AI agent (Antigravi
 
 | Placeholder | Replace with | Example |
 |---|---|---|
-| `<LOG_HUB_PATH>` | absolute path of your clone of this repo, **forward slashes** | `C:/tools/mcp-server-log-hub`, `/Users/me/mcp-server-log-hub` |
-| `<ENV>` | OpenObserve environment: `dev`, `stg` or `prod` | `dev` |
+| `<MCP_LOGS_PATH>` | absolute path of your clone of this repo, **forward slashes** | `C:/tools/mcp-server-logs`, `/Users/me/mcp-server-logs` |
+| `<ENVS>` | OpenObserve environments to set up (prompt 1) | `dev, prod` |
+| `<ENV>` | OpenObserve environment of one question: `dev`, `stg` or `prod` | `prod` |
 | `<stream>`, `<service>` | OpenObserve stream / service name (optional: the agent lists them if you leave them out) | `shop_prod`, `Shop.Api` |
 
-### 1. Connect log-hub (once per machine and client)
-Run it in the workspace where you want to use the logs (e.g. your backend repo). The agent installs and builds, asks you for the OpenObserve account if `config/openobserve.<ENV>.env` is not filled in yet, registers itself in its own MCP config and checks the connection ([what it does](docs/AI_AGENT_SETUP.md)).
+### 1. Connect mcp-server-logs (once per machine and client)
+Run it in the workspace where you want to use the logs (e.g. your backend repo). The agent installs and builds, asks you for the OpenObserve account of each environment whose `config/openobserve.<env>.env` is not filled in yet, registers one `mcp-logs` server in its own MCP config and checks the connection ([what it does](docs/AI_AGENT_SETUP.md)).
 
 ```text
-Read the file <LOG_HUB_PATH>/docs/AI_AGENT_SETUP.md and follow it to connect log-hub to yourself
-for the <ENV> environment. The repo is already cloned at <LOG_HUB_PATH>.
+Read the file <MCP_LOGS_PATH>/docs/AI_AGENT_SETUP.md and follow it to connect mcp-server-logs to yourself
+as one server named mcp-logs. Environments to set up: <ENVS>. The repo is already cloned at <MCP_LOGS_PATH>.
 Register it in your global MCP config, then verify with list_openobserve_organizations.
 ```
 
-Variations: `for the dev and prod environments` · `with Seq too` · `only for this workspace` (instead of global). Some clients must be reloaded by you after this step (Antigravity: Agent panel → `…` → MCP Servers → Manage MCP Servers → Refresh; Claude Desktop: quit and reopen; VS Code: *MCP: List Servers* → Start); the agent tells you which, then reply `done`.
+Variations: `with Seq too` · `only for this workspace` (instead of global). Some clients must be reloaded by you after this step (Antigravity: Agent panel → `…` → MCP Servers → Manage MCP Servers → Refresh; Claude Desktop: quit and reopen; VS Code: *MCP: List Servers* → Start); the agent tells you which, then reply `done`.
 
 ### 2. Investigate a bug (live logs + this workspace's source)
 ```text
-Use log-hub-<ENV>: <describe the bug, e.g. "saving an order returns 500 since this morning">.
+Use mcp-logs on <ENV>: <describe the bug, e.g. "saving an order returns 500 since this morning">.
 Search the last 24h of <stream> (service <service>) for related errors, follow the failing
 request by its rcid across services, then find the cause in this repository's source.
 Cite the log lines and the source files.
@@ -90,14 +91,14 @@ Cite the log lines and the source files.
 
 ### 3. Analyse the newest ai-context export
 ```text
-Use log-hub-<ENV>: read the newest ai-context export of <stream> with read_ai_context
+Use mcp-logs: read the newest ai-context export of <stream> with read_ai_context
 (SUMMARY first, then the file:line it points to, then the rcid/ flow).
 Find the most frequent bug, explain its cause using this repository's source, and propose a fix.
 ```
 
 ### 4. Export logs to ai-context (to analyse later or share)
 ```text
-Use log-hub-<ENV>: export the Warning and Error logs of service <service> in stream <stream>
+Use mcp-logs on <ENV>: export the Warning and Error logs of service <service> in stream <stream>
 for the last 24h to ai-context with export_openobserve_logs, then summarise the export.
 ```
 
@@ -105,7 +106,7 @@ for the last 24h to ai-context with export_openobserve_logs, then summarise the 
 Add it as a rule of the repository where you use the logs (Antigravity: Customizations → Rules; Cursor: `.cursor/rules`; Claude Code: `CLAUDE.md`; Copilot: `.github/copilot-instructions.md`):
 
 ```text
-Logs: use the log-hub MCP tools. Read ai-context exports only with list_ai_context_snapshots and
+Logs: use the mcp-logs MCP tools; pass env (dev, stg, prod) to OpenObserve tools when I name an environment. Read ai-context exports only with list_ai_context_snapshots and
 read_ai_context (SUMMARY first, then the file:line it points to, then rcid/). Never open .lhub
 files or the ai-context/ folder directly. Compare the logs with this repository's source and cite both.
 ```
@@ -119,17 +120,17 @@ The easiest way is prompt 1 above; [docs/AI_AGENT_SETUP.md](docs/AI_AGENT_SETUP.
 Claude Code:
 
 ```bash
-claude mcp add log-hub -e OPENOBSERVE_ENV=dev -- node "<LOG_HUB_PATH>/start.mjs"
+claude mcp add --scope user mcp-logs -- node "<MCP_LOGS_PATH>/start.mjs"
 ```
 
-Other clients: add `mcp-server-log-hub` to `claude_desktop_config.json`, `.cursor/mcp.json` or the Antigravity MCP settings. Use the absolute path of your clone (quotes are not needed in JSON, even with spaces):
+Other clients: add `mcp-server-logs` to `claude_desktop_config.json`, `.cursor/mcp.json` or the Antigravity MCP settings. Use the absolute path of your clone (quotes are not needed in JSON, even with spaces). `env` is optional: `OPENOBSERVE_ENV` only sets the default environment, and Seq can come from `config/seq.env` instead:
 
 ```json
 {
   "mcpServers": {
-    "log-hub": {
+    "mcp-logs": {
       "command": "node",
-      "args": ["<LOG_HUB_PATH>/start.mjs"],
+      "args": ["<MCP_LOGS_PATH>/start.mjs"],
       "env": {
         "OPENOBSERVE_ENV": "dev",
         "SEQ_SERVER_URL": "https://seq.example.com",
@@ -161,26 +162,25 @@ The agent working in your backend repo starts this repository as an MCP server a
 
 ```
 Backend repo open in Antigravity
-  AI agent ──► client starts: node <this repo>/start.mjs   (installs/builds if needed; OPENOBSERVE_ENV=prod)
+  AI agent ──► client starts: node <this repo>/start.mjs   (installs/builds if needed; one server for dev/stg/prod)
            ◄── on connect, server instructions: "read ai-context only through read_ai_context, never open .lhub files"
   AI agent ──► list_ai_context_snapshots ─► read_ai_context (SUMMARY → file:line → rcid/)
                                                └─ each call: account for that env ↔ organization → decrypt in memory
   AI agent ──► compares the logs with the backend source in its own workspace
 ```
 
-1. **Register the server** in Antigravity: Agent panel → `…` → **MCP Servers** → **Manage MCP Servers** → **View raw config** (`mcp_config.json`). Add one block per environment you use, then refresh:
+1. **Register the server** in Antigravity: Agent panel → `…` → **MCP Servers** → **Manage MCP Servers** → **View raw config** (`mcp_config.json`). Add one block (it serves every environment), then refresh:
    ```json
    {
      "mcpServers": {
-       "log-hub-prod": {
+       "mcp-logs": {
          "command": "node",
-         "args": ["<LOG_HUB_PATH>/start.mjs"],
-         "env": { "OPENOBSERVE_ENV": "prod" }
+         "args": ["<MCP_LOGS_PATH>/start.mjs"]
        }
      }
    }
    ```
-   Cursor (`.cursor/mcp.json`) and Claude Code (`claude mcp add log-hub-prod -e OPENOBSERVE_ENV=prod -- node "<LOG_HUB_PATH>/start.mjs"`) work the same way.
+   Cursor (`.cursor/mcp.json`) and Claude Code (`claude mcp add --scope user mcp-logs -- node "<MCP_LOGS_PATH>/start.mjs"`) work the same way.
 2. **Ask.** Use the `analyze_ai_context` prompt (question, optional export folder), or [copy-paste prompt 3](#3-analyse-the-newest-ai-context-export).
 3. **Optional rule in the backend repo**, so you do not have to repeat it: [copy-paste prompt 5](#5-optional-rule-for-the-workspace-so-you-never-repeat-the-reading-order).
 
@@ -194,7 +194,7 @@ The server already sends the same rules as MCP *server instructions* when the ag
 | Reading a file | + the size of that decrypted file, released after 5 idle minutes | a few hundred ms per call |
 | Exporting 24h (DEV, 375k rows) | up to ~1.75 GB, only during the export | ~26% of one core |
 
-Each `mcpServers` entry is its own process, so register (or enable) only the environments you use.
+The one `mcp-logs` entry is one process for every environment; a second entry pointing at the same clone would only start a second process.
 
 ---
 
@@ -214,12 +214,12 @@ To consume this repository inside a Master MCP without subprocess overhead:
 
 ```typescript
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerLogHubTools } from 'mcp-server-log-hub';
+import { registerLogsTools } from 'mcp-server-logs';
 
 const masterMcp = new McpServer({ name: 'master-orchestrator', version: '1.0.0' });
 
-// Mount Log Hub tools with an optional namespace prefix
-registerLogHubTools(masterMcp, { prefix: 'logs_' });
+// Mount mcp-server-logs tools with an optional namespace prefix
+registerLogsTools(masterMcp, { prefix: 'logs_' });
 ```
 
 See [docs/PARENT_MCP_GUIDE.md](docs/PARENT_MCP_GUIDE.md) for full instructions and examples.

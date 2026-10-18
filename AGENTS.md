@@ -1,6 +1,6 @@
 # AGENTS.md - Master Operating Manual for AI Agents
 
-> **Primary Objective**: This repository (`mcp-server-log-hub`) is designed for **100% AI Vibe-Coding**. Any AI Agent (Claude, Gemini, GPT, Cursor, Copilot) reading this repository MUST follow the architectural invariants, standards, and rules described herein.
+> **Primary Objective**: This repository (`mcp-server-logs`) is designed for **100% AI Vibe-Coding**. Any AI Agent (Claude, Gemini, GPT, Cursor, Copilot) reading this repository MUST follow the architectural invariants, standards, and rules described herein.
 
 ---
 
@@ -19,7 +19,7 @@
 |---|---|
 | `src/index.ts` | entry point (MCP stdio, `--cli`, `--preflight`) and the library exports |
 | `src/config.ts` | folders, account files (`config/openobserve.<env>.env`, `config/seq.env`), placeholder detection |
-| `src/service.ts` | `LogHubService`: one provider or a broadcast to every configured provider |
+| `src/service.ts` | `LogsService`: one provider or a broadcast to every configured provider |
 | `src/providers/` | `base.ts` levels/time bounds · `seq.ts` · `openobserve.ts` (HTTP, paging, flows) · `openobserve-sql.ts` (pure SQL, noise filter, stream shape) · `index.ts` registry |
 | `src/tools/` | MCP tools: `common.ts` (`run`, results, shared zod fields, annotations) · `query.ts` · `openobserve.ts` · `ai-context.ts` |
 | `src/ai-context/` | encrypted exports: `lhub.ts` (file format) · `model.ts` (lines, patterns, names, windows) · `export-folder.ts` (writer) · `summary.ts` · `read.ts` |
@@ -92,7 +92,7 @@ Then add tests with a fake server (see `src/tests/seq.test.ts`).
 ## 4. MCP Tools Reference
 
 ### Tool: `list_log_providers`
-- **Purpose**: Lists all known log backends, whether their credentials are configured, and endpoint URLs.
+- **Purpose**: Lists all known log backends, whether their credentials are configured, and endpoint URLs, plus `openobserve_environments` (which of dev/stg/prod have an account).
 - **Parameters**: None.
 
 ### Tool: `query_logs`
@@ -106,14 +106,17 @@ Then add tests with a fake server (see `src/tests/seq.test.ts`).
   - `to` *(optional string)*: ISO timestamp.
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
   - `level` *(optional string or string[])*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`. One level = minimum severity (`'Warning'` → Warning, Error, Fatal); an array = exactly those levels.
+  - `env` *(optional `'dev' | 'stg' | 'prod'`)*: OpenObserve account for this call (`config/openobserve.<env>.env`); omit for the server default.
+
+**One server, every environment**: every OpenObserve tool (and `query_logs`, `export_openobserve_logs`) takes the same optional `env`. `withOpenObserveEnv` / `openObserveAccount()` (`src/config.ts`) scope the account to one call; never read `config.openobserve` directly in a provider or tool. `read_ai_context` takes no `env`: it uses the export's own.
 
 OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_streams`, `list_openobserve_stream_schema`, `list_openobserve_services`, `get_openobserve_service_logs`, `export_openobserve_logs` (writes ONE `ai-context/` export folder per call, `<from>_<to>_<service>_<levels>_<rows>` in `AI_CONTEXT_TIME_ZONE` (default UTC), with encrypted files `SUMMARY.lhub`, `services/<service>/<level>.lhub`, `rcid/<field>-<id>.lhub`; framework noise only counted unless `include_noise`; `skip_duplicates`, default true, drops rows already saved by an overlapping export), `list_ai_context_snapshots` (export folders), `read_ai_context` (decrypts one file of a folder in memory: `SUMMARY.lhub` first, then `file`/`offset` or `grep`), `find_openobserve_logs_by_rcid`, and `search_openobserve_logs`. See `docs/OPENOBSERVE_GUIDE.md`.
 
-**Tool rule**: register tools with `server.registerTool(name, { title, description, inputSchema, annotations }, handler)` (not the deprecated `server.tool`), wrap the body in `run(toolName, …)` from `src/tools/common.ts`, and set `readOnlyHint` (false only for tools that write, like `export_openobserve_logs`) and `openWorldHint` (true when it calls OpenObserve or Seq).
+**Tool rule**: register tools with `server.registerTool(name, { title, description, inputSchema, annotations }, handler)` (not the deprecated `server.tool`), wrap the body in `run(toolName, …)` (or `runIn(toolName, env, …)` for OpenObserve tools) from `src/tools/common.ts`, and set `readOnlyHint` (false only for tools that write, like `export_openobserve_logs`) and `openWorldHint` (true when it calls OpenObserve or Seq).
 
-**Prompts and server instructions**: prompts `investigate_api_bug` (bug report → live SQL search) and `analyze_ai_context` (question → read an export through `read_ai_context` → compare with the caller's source). On connect the server sends `logHubInstructions()` (`src/tools/index.ts`) as MCP server instructions. It is the only guidance an agent in another repository gets, because that agent never sees this file. When a tool or rule changes, update those instructions in the same change.
+**Prompts and server instructions**: prompts `investigate_api_bug` (bug report → live SQL search) and `analyze_ai_context` (question → read an export through `read_ai_context` → compare with the caller's source). On connect the server sends `logsInstructions()` (`src/tools/index.ts`) as MCP server instructions. It is the only guidance an agent in another repository gets, because that agent never sees this file. When a tool or rule changes, update those instructions in the same change.
 
-**ai-context rule**: `.lhub` files are encrypted with the OpenObserve organization identifier. Never open them with file tools or write code that decrypts them outside `src/ai-context/`; read them only through `read_ai_context`, which first checks that the account in `config/openobserve.<env>.env` connects and is enabled for the export's organization. Reading order: `SUMMARY.lhub` (whole export, Bugs table) → the `services/<service>/<level>.lhub` line it points to → that request's `rcid/` file. Folder and file names are plaintext (range, services, levels, row count, rcid values); never put log content or an organization identifier in a name. Never write an organization identifier to disk (`ai-context/`, `logs/`, file headers); use the organization name.
+**ai-context rule**: the `.lhub` extension, the `LHUB3` magic and the HKDF info `'mcp-log-hub/ai-context/v1'` (`src/ai-context/lhub.ts`) are frozen file-format constants from the project's earlier name: never rename them, or every existing export becomes unreadable. `.lhub` files are encrypted with the OpenObserve organization identifier. Never open them with file tools or write code that decrypts them outside `src/ai-context/`; read them only through `read_ai_context`, which first checks that the account in `config/openobserve.<env>.env` connects and is enabled for the export's organization. Reading order: `SUMMARY.lhub` (whole export, Bugs table) → the `services/<service>/<level>.lhub` line it points to → that request's `rcid/` file. Folder and file names are plaintext (range, services, levels, row count, rcid values); never put log content or an organization identifier in a name. Never write an organization identifier to disk (`ai-context/`, `logs/`, file headers); use the organization name.
 
 **Export content rule**: a service/level export downloads every Warning/Error/Critical row and every application log row, but only **counts** framework noise at Information level or below (health checks, ASP.NET pipeline, EF Core SQL, HttpClient, Ocelot, gRPC, MassTransit, Elsa; list in `NOISE_CATEGORIES`, `src/providers/openobserve-sql.ts`) and never selects constant SDK fields (`DROP_FIELDS`). Each SUMMARY says so under "What this export contains". When reading an export, never conclude that a request had no SQL / HTTP / gRPC activity from `services/` alone: those rows are in that request's `rcid/` file, or fetch them with `find_openobserve_logs_by_rcid`. When changing either list, update the tables in `docs/OPENOBSERVE_GUIDE.md` "What an export keeps and what it skips" in the same change.
 
@@ -124,8 +127,8 @@ OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_str
 This repository is designed to be consumed as a feature by a Master MCP.
 - If integrating inside a parent server in the same Node process, use:
   ```typescript
-  import { registerLogHubTools } from 'mcp-server-log-hub';
-  registerLogHubTools(parentServer, { prefix: 'log_hub_' });
+  import { registerLogsTools } from 'mcp-server-logs';
+  registerLogsTools(parentServer, { prefix: 'logs_' });
   ```
 - If running as a child subprocess, spawn `node start.mjs` (auto-installs and builds) using `StdioClientTransport`.
 

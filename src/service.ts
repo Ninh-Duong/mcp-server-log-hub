@@ -3,7 +3,7 @@ import { normalizeLogLevel, resolveLevels } from './providers/base.js';
 import { getAllProviders, getProvider, listProviders } from './providers/index.js';
 import { logger, maskOrg } from './utils/logger.js';
 
-export class LogHubService {
+export class LogsService {
   /**
    * Returns configuration status of all available log providers
    */
@@ -78,4 +78,4 @@ export class LogHubService {
   }
 }
 
-export const defaultLogHubService = new LogHubService();
+export const defaultLogsService = new LogsService();

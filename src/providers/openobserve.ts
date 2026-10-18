@@ -1,4 +1,4 @@
-import { config, openObserveAccountFor } from '../config.js';
+import { openObserveAccount, openObserveAccountFor } from '../config.js';
 import { ExportAggregates, LogEntry, LogLevel, LogProvider, LogQuery, ProviderStatus, RequestFlow } from '../types.js';
 import { FLOW_ID_FIELDS, LEVEL_ALIASES, normalizeLogLevel, parseTimeBound } from './base.js';
 import {
@@ -68,23 +68,24 @@ export class OpenObserveProvider implements LogProvider {
   public readonly name = 'openobserve';
 
   public getStatus(): ProviderStatus {
+    const account = openObserveAccount();
     const missing = [
-      !config.openobserve.url && 'OPENOBSERVE_URL',
-      !config.openobserve.email && 'OPENOBSERVE_EMAIL',
-      !config.openobserve.token && 'OPENOBSERVE_TOKEN',
+      !account.url && 'OPENOBSERVE_URL',
+      !account.email && 'OPENOBSERVE_EMAIL',
+      !account.token && 'OPENOBSERVE_TOKEN',
     ].filter((value): value is string => Boolean(value));
-    const env = config.openobserve.env ? ` (${config.openobserve.env.toUpperCase()})` : '';
+    const env = account.env ? ` (${account.env.toUpperCase()})` : '';
     return {
       name: this.name,
       configured: missing.length === 0,
-      endpoint: config.openobserve.url || undefined,
+      endpoint: account.url || undefined,
       missingVariables: missing.length ? missing : undefined,
       details: missing.length ? `Missing ${missing.join(', ')}${env}` : `Credentials configured${env}; connection not yet verified`,
     };
   }
 
-  private async request(path: string, init: RequestInit = {}, operationId: string = randomUUID(), account: Account = config.openobserve): Promise<unknown> {
-    if (account === config.openobserve && !this.getStatus().configured) throw new Error(this.getStatus().details);
+  private async request(path: string, init: RequestInit = {}, operationId: string = randomUUID(), account: Account = openObserveAccount()): Promise<unknown> {
+    if (account === openObserveAccount() && !this.getStatus().configured) throw new Error(this.getStatus().details);
     if (!account.url || !account.email || !account.token) throw new Error('OpenObserve account is missing or incomplete');
     const base = new URL(account.url);
     if (base.protocol !== 'https:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') {
@@ -133,7 +134,7 @@ export class OpenObserveProvider implements LogProvider {
   // ponytail: 60s TTL, so a revoked organization stays usable for up to 60s; drop the TTL if that is unacceptable.
   private orgCache = new Map<string, { at: number; organizations: OpenObserveOrganization[] }>();
 
-  public async listOrganizations(operationId: string = randomUUID(), account: Account = config.openobserve): Promise<OpenObserveOrganization[]> {
+  public async listOrganizations(operationId: string = randomUUID(), account: Account = openObserveAccount()): Promise<OpenObserveOrganization[]> {
     const key = `${account.url}|${account.email}|${account.token}`;
     const cached = this.orgCache.get(key);
     if (cached && Date.now() - cached.at < 60_000) return cached.organizations;
@@ -151,7 +152,7 @@ export class OpenObserveProvider implements LogProvider {
    * for `env`. Only an account that connects to that environment and is enabled for the organization gets it.
    */
   public async organizationKey(env: string | undefined, organization: string): Promise<string> {
-    const account = env && env !== 'default' ? openObserveAccountFor(env) : config.openobserve;
+    const account = env && env !== 'default' ? openObserveAccountFor(env) : openObserveAccount();
     const label = (env || 'default').toUpperCase();
     if (!account.url || !account.email || !account.token) {
       throw new Error(`No access: the OpenObserve ${label} account is not configured${env && env !== 'default' ? ` (config/openobserve.${env.toLowerCase()}.env)` : ''}`);

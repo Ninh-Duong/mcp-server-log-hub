@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { config } from '../config.js';
-import { registerLogHubTools } from '../tools/index.js';
+import { CONFIG_DIR, config } from '../config.js';
+import { registerLogsTools } from '../tools/index.js';
 import { logger } from '../utils/logger.js';
 import { routed, us } from './helpers.js';
 
@@ -17,10 +19,10 @@ const TOOLS = [
   'find_openobserve_logs_by_rcid', 'search_openobserve_logs',
 ];
 
-/** A real MCP client connected in memory to a server with the Log Hub tools, so argument validation and defaults apply. */
+/** A real MCP client connected in memory to a server with the mcp-server-logs tools, so argument validation and defaults apply. */
 async function connect(prefix?: string): Promise<Client> {
   const server = new McpServer({ name: 'test', version: '1.0.0' });
-  registerLogHubTools(server, { prefix });
+  registerLogsTools(server, { prefix });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
@@ -66,20 +68,20 @@ test('registers the prompt and every tool, with an optional name prefix', async 
   const text = (prompt.messages[0]!.content as { text: string }).text;
   for (const word of [/schema/i, /log-work/i, /source code/i, /Observed at: not provided/]) assert.match(text, word);
 
-  const prefixed = await connect('log_hub_');
-  assert.ok((await prefixed.listTools()).tools.every((t) => t.name.startsWith('log_hub_')));
-  const prefixedPrompt = await prefixed.getPrompt({ name: 'log_hub_investigate_api_bug', arguments: { bug_report: 'x', api_endpoint: 'GET /' } });
-  assert.match((prefixedPrompt.messages[0]!.content as { text: string }).text, /log_hub_search_openobserve_logs/);
+  const prefixed = await connect('logs_');
+  assert.ok((await prefixed.listTools()).tools.every((t) => t.name.startsWith('logs_')));
+  const prefixedPrompt = await prefixed.getPrompt({ name: 'logs_investigate_api_bug', arguments: { bug_report: 'x', api_endpoint: 'GET /' } });
+  assert.match((prefixedPrompt.messages[0]!.content as { text: string }).text, /logs_search_openobserve_logs/);
 });
 
 test('analyze_ai_context prompt walks an agent through read_ai_context only', async () => {
-  const client = await connect('log_hub_');
-  assert.deepEqual((await client.listPrompts()).prompts.map((p) => p.name).sort(), ['log_hub_analyze_ai_context', 'log_hub_investigate_api_bug']);
-  const prompt = await client.getPrompt({ name: 'log_hub_analyze_ai_context', arguments: { question: 'Why do orders fail?', snapshot: 'openobserve/prod/x/s/f' } });
+  const client = await connect('logs_');
+  assert.deepEqual((await client.listPrompts()).prompts.map((p) => p.name).sort(), ['logs_analyze_ai_context', 'logs_investigate_api_bug']);
+  const prompt = await client.getPrompt({ name: 'logs_analyze_ai_context', arguments: { question: 'Why do orders fail?', snapshot: 'openobserve/prod/x/s/f' } });
   const text = (prompt.messages[0]!.content as { text: string }).text;
-  for (const part of [/Why do orders fail\?/, /openobserve\/prod\/x\/s\/f/, /log_hub_read_ai_context/, /SUMMARY/, /rcid\//, /never open .*\.lhub/i, /source code/i]) assert.match(text, part);
-  const noSnapshot = await client.getPrompt({ name: 'log_hub_analyze_ai_context', arguments: { question: 'q' } });
-  assert.match((noSnapshot.messages[0]!.content as { text: string }).text, /log_hub_list_ai_context_snapshots/);
+  for (const part of [/Why do orders fail\?/, /openobserve\/prod\/x\/s\/f/, /logs_read_ai_context/, /SUMMARY/, /rcid\//, /never open .*\.lhub/i, /source code/i]) assert.match(text, part);
+  const noSnapshot = await client.getPrompt({ name: 'logs_analyze_ai_context', arguments: { question: 'q' } });
+  assert.match((noSnapshot.messages[0]!.content as { text: string }).text, /logs_list_ai_context_snapshots/);
 });
 
 test('read_ai_context never shows an absolute path', async () => {
@@ -171,4 +173,29 @@ test('export_openobserve_logs with rcid saves that one request', async () => {
   assert.match(unknownOrg.text, /not accessible/);
   const badRange = await call(client, 'export_openobserve_logs', { organization: 'org-id', stream: 's', from: 'yesterday-ish' });
   assert.match(badRange.text, /Invalid time range/);
+});
+
+test('one server serves every environment: OpenObserve tools take env', async () => {
+  writeFileSync(join(CONFIG_DIR, 'openobserve.prod.env'), 'OPENOBSERVE_URL=https://prod.example.test\nOPENOBSERVE_EMAIL=reader@example.test\nOPENOBSERVE_TOKEN=p\n');
+  const client = await connect();
+  const environments = (await data(client, 'list_log_providers')).openobserve_environments;
+  assert.deepEqual(environments.map((e: { env: string; configured: boolean }) => [e.env, e.configured]), [['dev', false], ['stg', false], ['prod', true]]);
+
+  fakeStream();
+  const answer = globalThis.fetch;
+  const hosts: string[] = [];
+  globalThis.fetch = (url, init) => { hosts.push(new URL(String(url)).hostname); return answer(url, init); };
+  await data(client, 'list_openobserve_streams', { env: 'prod', organization: 'org-id' });
+  assert.deepEqual([...new Set(hosts)], ['prod.example.test'], 'env picks config/openobserve.prod.env for this call');
+  hosts.length = 0;
+  await data(client, 'list_openobserve_streams', { organization: 'org-id' });
+  assert.deepEqual([...new Set(hosts)], ['logs.example.test'], 'without env: the server default account');
+
+  const exported = await data(client, 'export_openobserve_logs', { env: 'prod', organization: 'org-id', stream: 's', from: '1h' });
+  assert.match(exported.snapshot, /^openobserve\/prod\/acme\/s\//, 'the export is filed under the env it came from');
+  assert.equal((await call(client, 'read_ai_context', { snapshot: exported.snapshot })).isError, false);
+
+  const missing = await call(client, 'list_openobserve_organizations', { env: 'stg' });
+  assert.deepEqual([missing.isError, /Missing OPENOBSERVE_URL.*\(STG\)/.test(missing.text)], [true, true], missing.text);
+  assert.equal((await call(client, 'query_logs', { provider: 'openobserve', env: 'qa' })).isError, true, 'env is validated');
 });

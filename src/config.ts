@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,7 +88,7 @@ export function splitBasicCredential(email: string, token: string): { email: str
   return { email, token };
 }
 
-const openObserveAccount = (url: string | undefined, email: string | undefined, token: string | undefined) => ({
+const parseAccount = (url: string | undefined, email: string | undefined, token: string | undefined) => ({
   url: real(url).replace(/\/+$/, ''),
   ...splitBasicCredential(real(email), real(token)),
 });
@@ -100,7 +101,7 @@ export const config = {
   openobserve: {
     /** Selected environment, or undefined when using OPENOBSERVE_* variables directly */
     env: undefined as OpenObserveEnv | undefined,
-    ...openObserveAccount(process.env.OPENOBSERVE_URL, process.env.OPENOBSERVE_EMAIL, process.env.OPENOBSERVE_TOKEN),
+    ...parseAccount(process.env.OPENOBSERVE_URL, process.env.OPENOBSERVE_EMAIL, process.env.OPENOBSERVE_TOKEN),
   },
 };
 
@@ -109,13 +110,21 @@ export function openObserveAccountFor(env: string): { env: OpenObserveEnv; url: 
   const key = env.toLowerCase() as OpenObserveEnv;
   if (!OPENOBSERVE_ENVS.includes(key)) throw new Error(`Unknown OpenObserve environment '${env}'. Use ${OPENOBSERVE_ENVS.join(', ')}`);
   const saved = readEnvFile(openObserveEnvFile(key));
-  return { env: key, ...openObserveAccount(saved.OPENOBSERVE_URL, saved.OPENOBSERVE_EMAIL, saved.OPENOBSERVE_TOKEN) };
+  return { env: key, ...parseAccount(saved.OPENOBSERVE_URL, saved.OPENOBSERVE_EMAIL, saved.OPENOBSERVE_TOKEN) };
 }
 
 /** Switches the active OpenObserve account to the one saved for `env`. */
 export function useOpenObserveEnv(env: string): void {
   config.openobserve = openObserveAccountFor(env);
 }
+
+const callAccount = new AsyncLocalStorage<typeof config.openobserve>();
+
+/** The OpenObserve account of the running tool call (picked with `env`), else the startup account. */
+export const openObserveAccount = (): typeof config.openobserve => callAccount.getStore() ?? config.openobserve;
+
+/** Runs `fn` with the account saved for `env` (one MCP call); without `env`, with the startup account. */
+export const withOpenObserveEnv = <T>(env: string | undefined, fn: () => T): T => (env ? callAccount.run(openObserveAccountFor(env), fn) : fn());
 
 // MCP mode picks its environment at startup, e.g. "env": { "OPENOBSERVE_ENV": "dev" } in the MCP client config.
 // Without it (and without OPENOBSERVE_URL), the DEV account is used when its file has a URL.

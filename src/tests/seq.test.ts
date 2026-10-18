@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { config } from '../config.js';
-import { defaultLogHubService } from '../service.js';
+import { defaultLogsService } from '../service.js';
 
 const oldFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = oldFetch; });
@@ -20,7 +20,7 @@ function setup(levels: string[]): string[] {
 
 test('a single level is a minimum severity and is pushed into the Seq filter', async () => {
   const urls = setup(['Information', 'Warning', 'Error', 'Fatal']);
-  const logs = await defaultLogHubService.queryLogs({ provider: 'seq', query: "App = 'api'", level: 'Warning' });
+  const logs = await defaultLogsService.queryLogs({ provider: 'seq', query: "App = 'api'", level: 'Warning' });
   assert.deepEqual(logs.map((l) => l.level).sort(), ['Error', 'Fatal', 'Warning']);
   const filter = new URL(urls[0]!).searchParams.get('filter') || '';
   assert.match(filter, /^\(App = 'api'\) and @Level in \[.*'Warning'.*\] ci$/);
@@ -29,13 +29,13 @@ test('a single level is a minimum severity and is pushed into the Seq filter', a
 
 test('an array of levels matches exactly those levels', async () => {
   setup(['Debug', 'Information', 'Error']);
-  const logs = await defaultLogHubService.queryLogs({ provider: 'seq', level: ['Debug'] });
+  const logs = await defaultLogsService.queryLogs({ provider: 'seq', level: ['Debug'] });
   assert.deepEqual(logs.map((l) => l.level), ['Debug']);
 });
 
 test('rejects an unparseable time bound before calling Seq', async () => {
   const urls = setup([]);
-  await assert.rejects(defaultLogHubService.queryLogs({ provider: 'seq', from: 'garbage' }), /Invalid time range/);
+  await assert.rejects(defaultLogsService.queryLogs({ provider: 'seq', from: 'garbage' }), /Invalid time range/);
   assert.equal(urls.length, 0);
 });
 
@@ -50,7 +50,7 @@ test('sends the API key header, count and time bounds, and maps Seq events', asy
       { Timestamp: '2026-01-01T00:01:00Z', Level: 'Error', RenderedMessage: 'Order 8 failed', Properties: { Id: 8 } },
     ]), { status: 200 });
   };
-  const logs = await defaultLogHubService.queryLogs({ provider: 'seq', from: '2026-01-01T00:00:00Z', to: '2026-01-01T01:00:00Z', limit: 1000 });
+  const logs = await defaultLogsService.queryLogs({ provider: 'seq', from: '2026-01-01T00:00:00Z', to: '2026-01-01T01:00:00Z', limit: 1000 });
   const { url, headers } = requests[0]!;
   assert.equal(headers.get('x-seq-apikey'), 'test-key');
   assert.equal(url.pathname, '/api/events');
@@ -65,15 +65,15 @@ test('sends the API key header, count and time bounds, and maps Seq events', asy
 test('reports Seq HTTP errors, tolerates a non-array body, and needs an account', async () => {
   setup([]);
   globalThis.fetch = async () => new Response('denied', { status: 403 });
-  await assert.rejects(defaultLogHubService.queryLogs({ provider: 'seq' }), /Seq API returned HTTP 403: denied/);
+  await assert.rejects(defaultLogsService.queryLogs({ provider: 'seq' }), /Seq API returned HTTP 403: denied/);
   globalThis.fetch = async () => new Response(JSON.stringify({ events: [] }), { status: 200 });
-  assert.deepEqual(await defaultLogHubService.queryLogs({ provider: 'seq' }), []);
+  assert.deepEqual(await defaultLogsService.queryLogs({ provider: 'seq' }), []);
   config.seq.apiKey = '';
-  await assert.rejects(defaultLogHubService.queryLogs({ provider: 'seq' }), /Seq provider is not configured: .*SEQ_API_KEY/);
+  await assert.rejects(defaultLogsService.queryLogs({ provider: 'seq' }), /Seq provider is not configured: .*SEQ_API_KEY/);
 });
 
 test('rejects a time range that ends before it starts', async () => {
   const urls = setup([]);
-  await assert.rejects(defaultLogHubService.queryLogs({ provider: 'seq', from: '2026-01-02T00:00:00Z', to: '2026-01-01T00:00:00Z' }), /Invalid time range/);
+  await assert.rejects(defaultLogsService.queryLogs({ provider: 'seq', from: '2026-01-02T00:00:00Z', to: '2026-01-01T00:00:00Z' }), /Invalid time range/);
   assert.equal(urls.length, 0);
 });

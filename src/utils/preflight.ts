@@ -1,6 +1,6 @@
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { config, LOGS_DIR } from '../config.js';
+import { config, LOGS_DIR, OPENOBSERVE_ENVS, OpenObserveEnv, openObserveAccountFor } from '../config.js';
 import { logger } from './logger.js';
 
 export interface PreflightCheckItem {
@@ -21,7 +21,7 @@ const MIN_NODE_MAJOR = 22;
  * Validates runtime environment, filesystem permissions, and provider configurations
  */
 export function runPreflightChecks(logToConsole: boolean = false): PreflightResult {
-  const items = [checkNode(), checkLogsFolder(), checkSeq(), checkOpenObserve()];
+  const items = [checkNode(), checkLogsFolder(), checkSeq(), checkOpenObserve(), ...OPENOBSERVE_ENVS.map(checkOpenObserveEnv)];
   const result: PreflightResult = { ok: !items.some((item) => item.status === 'FAIL'), timestamp: new Date().toISOString(), items };
   logger.info(`Preflight diagnostics completed: ${result.ok ? 'PASSED' : 'FAILED'}`);
   if (logToConsole) printReport(result);
@@ -65,10 +65,19 @@ function checkOpenObserve(): PreflightCheckItem {
   };
 }
 
+/** One server serves every environment (tools take env), so each config/openobserve.<env>.env is reported. */
+function checkOpenObserveEnv(env: OpenObserveEnv): PreflightCheckItem {
+  const { url, email, token } = openObserveAccountFor(env);
+  const name = `OpenObserve ${env.toUpperCase()}`;
+  return url && email && token
+    ? { name, status: 'PASS', message: `env '${env}' available: ${url} (connection not verified)` }
+    : { name, status: 'WARN', message: `env '${env}' unavailable: fill in config/openobserve.${env}.env` };
+}
+
 function printReport(result: PreflightResult): void {
   const badge = { PASS: '\x1b[32m[PASS]\x1b[0m', WARN: '\x1b[33m[WARN]\x1b[0m', FAIL: '\x1b[31m[FAIL]\x1b[0m' };
   console.log('\n========================================');
-  console.log('       LOG HUB PREFLIGHT DIAGNOSTICS    ');
+  console.log('  MCP-SERVER-LOGS PREFLIGHT DIAGNOSTICS');
   console.log('========================================');
   for (const item of result.items) console.log(`${badge[item.status]} ${item.name.padEnd(25)} : ${item.message}`);
   console.log('========================================');

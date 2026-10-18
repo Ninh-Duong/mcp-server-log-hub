@@ -1,18 +1,18 @@
 /** ai-context tools: export logs to an encrypted folder, list folders, read one file through the access check. */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { config } from '../config.js';
+import { openObserveAccount } from '../config.js';
 import { LhubHeader, SnapshotMeta, exportDir, fetchWindowMs, listSnapshots, openSnapshot, snapshotFiles, startExport, timeWindows } from '../ai-context/index.js';
 import { runExport } from '../export.js';
 import { openObserveProvider } from '../providers/index.js';
 import { parseTimeBound, resolveLevels } from '../providers/base.js';
 import { LogLevel } from '../types.js';
-import { READ_LOCAL, ToolResult, json, level, organization, run, stream, text, to } from './common.js';
+import { READ_LOCAL, ToolResult, env, json, level, organization, run, runIn, stream, text, to } from './common.js';
 
 const EXPORT_DESCRIPTION = 'Fetch all logs (or max_rows) of a service/level in a time range and save them as ONE ai-context export folder (<from>_<to>_<service>_<levels>_<rows>, times in AI_CONTEXT_TIME_ZONE, default UTC) with encrypted, compressed files: SUMMARY.lhub (whole export), services/<service>/<level>.lhub, rcid/<field>-<id>.lhub. Framework noise (health checks, ASP.NET pipeline, EF Core SQL, HttpClient, Ocelot, gRPC, MassTransit, Elsa at Information or below) is counted in SUMMARY, not downloaded, unless include_noise; failing requests keep it in rcid/. Returns the folder: read it with {prefix}read_ai_context (SUMMARY first), then open only the log lines it points to. To list a service\'s bugs: level \'Error\' + service, then read the SUMMARY "Bugs" table (one row per bug, each with the full flow of every failing request). To diagnose one request: pass rcid (widen from, e.g. \'7d\', if nothing is found).';
 
 const exportInput = {
-  organization, stream,
+  env, organization, stream,
   service: z.string().optional().describe('Service name from list_openobserve_services; omit for all services.'),
   level,
   from: z.string().default('1h').describe('Lower bound, ISO 8601 with timezone or relative duration (default 1h).'),
@@ -23,7 +23,7 @@ const exportInput = {
   skip_duplicates: z.boolean().default(true).describe('Drop logs already saved by an earlier export of this stream (overlapping ranges), so only new rows are written. Ignored with rcid.'),
   include_noise: z.boolean().default(false).describe('Also download framework noise rows (health checks, ASP.NET hosting/routing/MVC/CORS, EF Core SQL, HttpClient, Ocelot, gRPC, MassTransit, Elsa at Information or below). Default: only counted in SUMMARY; they stay whole inside rcid/. Much slower.'),
 };
-type ExportArgs = { organization: string; stream: string; service?: string; level?: LogLevel | LogLevel[]; from: string; to?: string; max_rows?: number;
+type ExportArgs = { env?: string; organization: string; stream: string; service?: string; level?: LogLevel | LogLevel[]; from: string; to?: string; max_rows?: number;
   include_flows: boolean; rcid?: string; skip_duplicates: boolean; include_noise: boolean };
 
 /** A ready-made request for an agent in any repository: answer a question from an export, through read_ai_context only. */
@@ -36,7 +36,7 @@ export function registerAnalyzePrompt(server: McpServer, prefix: string): void {
       snapshot: z.string().optional().describe('Export folder from list_ai_context_snapshots; omit to pick the newest matching one.'),
     },
   }, ({ question, snapshot }) => ({
-    description: 'Read an ai-context export with the Log Hub tools.',
+    description: 'Read an ai-context export with the mcp-server-logs tools.',
     messages: [{ role: 'user', content: { type: 'text', text: `Answer this from the ai-context log export, then explain it with the source code of this workspace.
 
 Question: ${question}
@@ -58,7 +58,7 @@ export function registerAiContextTools(server: McpServer, prefix: string): void 
     inputSchema: exportInput,
     // Writes a new local folder; never changes or deletes earlier exports.
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  }, (args) => run('export_openobserve_logs', () => exportLogs(args, prefix)));
+  }, (args) => runIn('export_openobserve_logs', args.env, () => exportLogs(args, prefix)));
 
   server.registerTool(`${prefix}list_ai_context_snapshots`, {
     title: 'List ai-context exports',
@@ -94,7 +94,7 @@ async function exportLogs(args: ExportArgs, prefix: string): Promise<ToolResult>
   if (!organization) throw new Error(`Organization '${args.organization}' is not accessible to this account`);
   const levels = args.rcid ? undefined : resolveLevels(args.level);
   const meta: SnapshotMeta = {
-    provider: 'openobserve', env: config.openobserve.env, organization: organization.name, stream: args.stream, service: args.service,
+    provider: 'openobserve', env: openObserveAccount().env, organization: organization.name, stream: args.stream, service: args.service,
     levels, from, to, limit: args.max_rows ?? Infinity, includeNoise: args.include_noise,
   };
   return args.rcid ? exportRequest(meta, args.organization, args.rcid, prefix) : exportRange(meta, args, prefix);

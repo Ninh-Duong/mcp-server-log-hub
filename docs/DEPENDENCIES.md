@@ -1,6 +1,6 @@
 # Dependency Catalog & Architectural Rationale
 
-This document tracks all external libraries used in `mcp-server-log-hub` and provides the engineering rationale for each choice, strictly adhering to the **Ponytail Principle** (minimalism, zero bloat, standard library first).
+This document tracks all external libraries used in `mcp-server-logs` and provides the engineering rationale for each choice, strictly adhering to the **Ponytail Principle** (minimalism, zero bloat, standard library first).
 
 ---
 

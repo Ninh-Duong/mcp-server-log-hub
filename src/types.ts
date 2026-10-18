@@ -1,5 +1,5 @@
 /**
- * Core type definitions for mcp-server-log-hub
+ * Core type definitions for mcp-server-logs
  */
 
 /** Ordered from least to most severe. */

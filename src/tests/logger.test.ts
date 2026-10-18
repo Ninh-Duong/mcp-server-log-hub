@@ -49,7 +49,11 @@ test('preflight reports each provider and the logs folder', () => {
   assert.equal(result.stdout, '');
   assert.equal(ok, true);
   const status = Object.fromEntries(items.map((i) => [i.name, i.status]));
-  assert.deepEqual(status, { 'Node.js Runtime': 'PASS', 'Logs Storage': 'PASS', 'Seq Provider': 'WARN', 'OpenObserve Provider': 'PASS' });
+  assert.deepEqual(status, {
+    'Node.js Runtime': 'PASS', 'Logs Storage': 'PASS', 'Seq Provider': 'WARN', 'OpenObserve Provider': 'PASS',
+    'OpenObserve DEV': 'WARN', 'OpenObserve STG': 'WARN', 'OpenObserve PROD': 'WARN',
+  }, 'one row per env file: none is filled in the test config folder');
+  assert.match(items.find((i) => i.name === 'OpenObserve PROD')!.message, /config\/openobserve\.prod\.env/);
   assert.match(items.find((i) => i.name === 'OpenObserve Provider')!.message, /\[DEV\]/);
   assert.match(items.find((i) => i.name === 'Logs Storage')!.message, new RegExp(LOGS_DIR.replace(/[\\.]/g, '\\$&')));
 

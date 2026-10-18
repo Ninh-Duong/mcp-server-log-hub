@@ -1,7 +1,7 @@
 /** CLI Seq search: reuse or enter the account (saved to config/seq.env), then one filtered query. */
 import { resolve } from 'node:path';
 import { CONFIG_DIR, config, writePrivateEnvFile } from '../config.js';
-import { defaultLogHubService } from '../service.js';
+import { defaultLogsService } from '../service.js';
 import { Prompt, confirm } from './io.js';
 
 export async function runSeq(prompt: Prompt): Promise<void> {
@@ -9,7 +9,7 @@ export async function runSeq(prompt: Prompt): Promise<void> {
   const query = (await prompt.ask('Seq filter (blank for recent logs): ')).trim();
   const count = Number((await prompt.ask('Maximum results [10]: ')).trim() || 10);
   if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error('Maximum results must be 1-500');
-  const logs = await defaultLogHubService.queryLogs({ provider: 'seq', query: query || undefined, limit: count });
+  const logs = await defaultLogsService.queryLogs({ provider: 'seq', query: query || undefined, limit: count });
   console.log(`\nFound ${logs.length} logs:`);
   for (const log of logs) console.log(`[${log.timestamp}] [${log.level}] ${log.message}`);
 }

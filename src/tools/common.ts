@@ -1,5 +1,6 @@
 /** Shared pieces of the MCP tools: results, error handling, argument schemas and annotations. */
 import { z } from 'zod';
+import { OPENOBSERVE_ENVS, withOpenObserveEnv } from '../config.js';
 import { LOG_LEVELS } from '../types.js';
 import { logger } from '../utils/logger.js';
 
@@ -25,10 +26,16 @@ export async function run(tool: string, body: () => Promise<ToolResult>, prefix 
   }
 }
 
+/** `run` with the OpenObserve account of `env` for this one call; without `env`, the server's default account. */
+export const runIn = (tool: string, env: string | undefined, body: () => Promise<ToolResult>, prefix = ''): Promise<ToolResult> =>
+  run(tool, () => withOpenObserveEnv(env, body), prefix);
+
 /** Reads only: no side effects. Tools that call OpenObserve or Seq also talk to an outside system. */
 export const READ_REMOTE = { readOnlyHint: true, openWorldHint: true } as const;
 export const READ_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
 
+export const env = z.enum(OPENOBSERVE_ENVS).optional()
+  .describe("OpenObserve environment ('dev', 'stg', 'prod'): uses config/openobserve.<env>.env for this call. Omit for the server default (OPENOBSERVE_ENV, else dev). Use the same env for every call of one investigation.");
 export const organization = z.string().min(1).describe('Organization identifier from list_openobserve_organizations.');
 export const stream = z.string().min(1).describe('Log stream from list_openobserve_streams.');
 export const level = z.union([z.enum(LOG_LEVELS), z.array(z.enum(LOG_LEVELS)).min(1)]).optional()

@@ -2,7 +2,7 @@
 
 ## 1. System Topology
 
-`mcp-server-log-hub` operates as a unified adapter layer bridging AI Agent interfaces and heterogeneous logging platforms.
+`mcp-server-logs` operates as a unified adapter layer bridging AI Agent interfaces and heterogeneous logging platforms.
 
 ```mermaid
 flowchart TD
@@ -12,10 +12,10 @@ flowchart TD
         MasterMCP["Parent / Master MCP Orchestrator"]
     end
 
-    subgraph CoreHub["mcp-server-log-hub"]
+    subgraph CoreHub["mcp-server-logs"]
         Router["CLI & MCP Transport Router\n(src/index.ts)"]
         Tools["MCP Tools and Prompt: search, schema, export, bug investigation\n(src/tools/)"]
-        Service["Log Hub Service\n(src/service.ts)"]
+        Service["LogsService\n(src/service.ts)"]
         Registry["Provider Registry\n(src/providers/index.ts)"]
         Preflight["Startup Preflight Diagnostics\n(src/utils/preflight.ts)"]
         Logger["Provider request lifecycle diagnostics\n(src/utils/logger.ts)"]
@@ -47,7 +47,7 @@ flowchart TD
     Logger --> LogFile
 ```
 
-On connect, the server sends instructions (`logHubInstructions()` in `src/tools/index.ts`): agents in any repository learn to read ai-context only through `read_ai_context`, in which order, and to compare logs with their own source. The `analyze_ai_context` MCP Prompt packages that workflow for one question. The `investigate_api_bug` MCP Prompt guides the caller through inspecting source code, discovering Organization/stream/schema, running bounded SELECT searches, saving evidence in the caller's own `log-work/` directory, and citing log timestamps with source locations. Provider request logs record endpoint paths, status, duration, and result counts without credentials, query values, or returned application log contents.
+On connect, the server sends instructions (`logsInstructions()` in `src/tools/index.ts`): agents in any repository learn to read ai-context only through `read_ai_context`, in which order, and to compare logs with their own source. The `analyze_ai_context` MCP Prompt packages that workflow for one question. The `investigate_api_bug` MCP Prompt guides the caller through inspecting source code, discovering Organization/stream/schema, running bounded SELECT searches, saving evidence in the caller's own `log-work/` directory, and citing log timestamps with source locations. Provider request logs record endpoint paths, status, duration, and result counts without credentials, query values, or returned application log contents.
 
 ---
 
@@ -55,10 +55,10 @@ On connect, the server sends instructions (`logHubInstructions()` in `src/tools/
 
 ### Pillar A: Dual-Mode Operation (Standalone vs Embedded Child)
 1. **Standalone MCP Server**:
-   - Run directly via `node dist/index.js` or `npx mcp-server-log-hub`.
+   - Run directly via `node dist/index.js` or `npx mcp-server-logs`.
    - Communicates over standard input/output (`StdioServerTransport`).
 2. **Embedded Child Feature Module**:
-   - Master MCPs can import `registerLogHubTools` and mount log querying capabilities directly into the master server without subprocess overhead.
+   - Master MCPs can import `registerLogsTools` and mount log querying capabilities directly into the master server without subprocess overhead.
 
 ### Pillar B: Stdio Transport Integrity
 In the Model Context Protocol, any data written to standard output (`stdout`) that is not valid JSON-RPC breaks the client connection.

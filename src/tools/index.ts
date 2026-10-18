@@ -1,25 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { LogHubService, defaultLogHubService } from '../service.js';
+import { LogsService, defaultLogsService } from '../service.js';
 import { registerAiContextTools, registerAnalyzePrompt } from './ai-context.js';
 import { registerOpenObserveTools } from './openobserve.js';
 import { registerBugPrompt, registerQueryTools } from './query.js';
 
 export interface RegisterToolsOptions {
-  /** Optional prefix for tool names (useful when mounted inside a Master MCP, e.g. "log_hub_") */
+  /** Optional prefix for tool names (useful when mounted inside a Master MCP, e.g. "logs_") */
   prefix?: string;
-  /** Custom LogHubService instance */
-  service?: LogHubService;
+  /** Custom LogsService instance */
+  service?: LogsService;
 }
 
 /**
- * Registers the Log Hub prompts and tools into any McpServer instance.
+ * Registers the mcp-server-logs prompts and tools into any McpServer instance.
  * Enables both standalone operation and direct in-process embedding by a Master MCP.
  */
-export function registerLogHubTools(server: McpServer, options: RegisterToolsOptions = {}): void {
+export function registerLogsTools(server: McpServer, options: RegisterToolsOptions = {}): void {
   const prefix = options.prefix || '';
   registerBugPrompt(server, prefix);
   registerAnalyzePrompt(server, prefix);
-  registerQueryTools(server, prefix, options.service || defaultLogHubService);
+  registerQueryTools(server, prefix, options.service || defaultLogsService);
   registerOpenObserveTools(server, prefix);
   registerAiContextTools(server, prefix);
 }
@@ -27,10 +27,11 @@ export function registerLogHubTools(server: McpServer, options: RegisterToolsOpt
 /**
  * Server instructions sent to the client on connect. Agents working in another repository never see this repo's
  * AGENTS.md, so this is where they learn to read ai-context only through the tools. A Master MCP mounting the tools
- * with a prefix can append logHubInstructions(prefix) to its own instructions.
+ * with a prefix can append logsInstructions(prefix) to its own instructions.
  */
-export function logHubInstructions(prefix = ''): string {
-  return `Log Hub: search Seq / OpenObserve logs and read encrypted ai-context log exports.
+export function logsInstructions(prefix = ''): string {
+  return `mcp-server-logs: search Seq / OpenObserve logs and read encrypted ai-context log exports.
+- One server serves every OpenObserve environment: live OpenObserve tools (and query_logs, export) take an optional env ('dev', 'stg', 'prod'). Use the environment the user names and keep it for the whole investigation; without env the server default is used. ${prefix}list_log_providers lists which environments have an account.
 - ai-context exports are read ONLY through ${prefix}list_ai_context_snapshots and ${prefix}read_ai_context. Never open, copy, cat or decrypt .lhub files (or anything under ai-context/) with file tools or scripts: they are encrypted, and the access check runs inside read_ai_context. You do not need the folder's path.
 - Reading order: ${prefix}list_ai_context_snapshots → ${prefix}read_ai_context(snapshot) for SUMMARY.lhub (Bugs table, top patterns with file:line) → read_ai_context(file, offset) at that line in services/<service>/<level>.lhub → the failing request in rcid/<field>-<id>.lhub, or grep an rcid across every file.
 - services/ leaves out framework noise (health checks, ASP.NET pipeline, EF Core SQL, HttpClient, gRPC…); a request's rcid/ file has all of it.

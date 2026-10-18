@@ -59,7 +59,7 @@ async function runCli(steps: Array<[string, string]>, setup = '', env: Record<st
 
 /** A config folder holding a DEV OpenObserve account pointing at the fake server. */
 const devConfig = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'log-hub-cli-'));
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-logs-cli-'));
   writeFileSync(join(dir, 'openobserve.dev.env'), 'OPENOBSERVE_URL=https://logs.example.test\nOPENOBSERVE_EMAIL=r@example.test\nOPENOBSERVE_TOKEN=t\n');
   return dir;
 };

@@ -3,13 +3,13 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { logHubInstructions, registerLogHubTools } from './tools/index.js';
+import { logsInstructions, registerLogsTools } from './tools/index.js';
 import { runPreflightChecks } from './utils/preflight.js';
 import { logger } from './utils/logger.js';
 
 // Library exports for Master / Router MCP integration
-export { logHubInstructions, registerLogHubTools, type RegisterToolsOptions } from './tools/index.js';
-export { LogHubService, defaultLogHubService } from './service.js';
+export { logsInstructions, registerLogsTools, type RegisterToolsOptions } from './tools/index.js';
+export { LogsService, defaultLogsService } from './service.js';
 export { getProvider, getAllProviders, listProviders, openObserveProvider } from './providers/index.js';
 export { runPreflightChecks, type PreflightResult } from './utils/preflight.js';
 export { logger } from './utils/logger.js';
@@ -19,7 +19,7 @@ export * from './types.js';
  * Initializes and starts the MCP server over stdio transport
  */
 export async function startMcpServer(): Promise<McpServer> {
-  logger.info('Initializing mcp-server-log-hub in stdio mode...');
+  logger.info('Initializing mcp-server-logs in stdio mode...');
 
   // Run silent preflight checks and log warnings to stderr/file
   const preflight = runPreflightChecks(false);
@@ -27,16 +27,16 @@ export async function startMcpServer(): Promise<McpServer> {
     logger.warn('Preflight checks detected issues; some providers may be unavailable.');
   }
 
-  const server = new McpServer({ name: 'mcp-server-log-hub', version: '1.0.0' }, { instructions: logHubInstructions() });
+  const server = new McpServer({ name: 'mcp-server-logs', version: '1.0.0' }, { instructions: logsInstructions() });
 
-  // Register Log Hub tools into the MCP server
-  registerLogHubTools(server);
+  // Register mcp-server-logs tools into the MCP server
+  registerLogsTools(server);
 
   // Connect via stdio transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  logger.info('mcp-server-log-hub is running and connected via stdio.');
+  logger.info('mcp-server-logs is running and connected via stdio.');
   return server;
 }
 

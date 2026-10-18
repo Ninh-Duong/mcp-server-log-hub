@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const root = mkdtempSync(join(tmpdir(), 'log-hub-test-'));
+const root = mkdtempSync(join(tmpdir(), 'mcp-logs-test-'));
 process.env.LOG_DIR = join(root, 'logs');
 process.env.CONFIG_DIR = join(root, 'config');
 process.env.AI_CONTEXT_DIR = join(root, 'ai-context');
