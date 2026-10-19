@@ -2,7 +2,7 @@
  * CLI Observe search: environment → organization → stream → mode (service & level, RCID, SQL) → time range, then an
  * encrypted export folder. Accounts are read only from config/openobserve.<env>.env; the CLI never asks for them.
  */
-import { config, OPENOBSERVE_ENVS, openObserveEnvFile, useOpenObserveEnv } from '../config.js';
+import { config, OPENOBSERVE_ENVS, openObserveAccountFor, openObserveEnvFile, useOpenObserveEnv } from '../config.js';
 import { ExportResult, SnapshotMeta, fetchWindowMs, startExport, timeWindows } from '../ai-context/index.js';
 import { runExport } from '../export.js';
 import { openObserveProvider } from '../providers/index.js';
@@ -37,9 +37,13 @@ interface Search {
 
 export async function runOpenObserve(prompt: Prompt): Promise<void> {
   await chooseEnvironment(prompt);
-  console.log(`Connecting to Observe ${config.openobserve.env?.toUpperCase()} (${config.openobserve.url})...`);
+  console.log(`Connecting to Observe ${config.openobserve.env?.toUpperCase()} (${config.openobserve.url}) as ${config.openobserve.email || 'configured identity'}...`);
   const organizations = await openObserveProvider.listOrganizations();
   if (!organizations.length) { console.log('This account has no accessible Organizations.'); return; }
+  if (config.openobserve.env === 'dev' && organizations.every((o) => o.name === 'eagers_au')) {
+    console.log(`\n[WARNING] You selected DEV, but the token in config/openobserve.dev.env connects as '${config.openobserve.email}', which only has access to PROD (${organizations.map((o) => o.name).join(', ')}).`);
+    console.log(`Please update config/openobserve.dev.env with the token for agent-check-log-dev.\n`);
+  }
   const organization = await choose(prompt, 'Accessible Organizations:', organizations, (org) => `${org.name} (${org.identifier})`, 'Choose Organization number: ', 'Invalid Organization selection');
   const streams = await openObserveProvider.listStreams(organization.identifier);
   if (!streams.length) { console.log('This Organization has no accessible log streams.'); return; }
@@ -61,7 +65,14 @@ export async function runOpenObserve(prompt: Prompt): Promise<void> {
 }
 
 async function chooseEnvironment(prompt: Prompt): Promise<void> {
-  console.log(`\nObserve environment:\n${OPENOBSERVE_ENVS.map((env, index) => `  ${index + 1}. ${env.toUpperCase()}`).join('\n')}`);
+  const configured = OPENOBSERVE_ENVS.map((env) => {
+    const acc = openObserveAccountFor(env);
+    return { env, ok: Boolean(acc.url && acc.email && acc.token), url: acc.url };
+  });
+  console.log(`\nObserve environment:\n${OPENOBSERVE_ENVS.map((env, index) => {
+    const info = configured[index]!;
+    return `  ${index + 1}. ${env.toUpperCase()}${info.ok ? ` (${info.url})` : ' (not configured)'}`;
+  }).join('\n')}`);
   const env = OPENOBSERVE_ENVS[Number((await prompt.ask(`Choose environment 1-${OPENOBSERVE_ENVS.length}: `)).trim()) - 1];
   if (!env) throw new Error('Invalid environment selection');
   useOpenObserveEnv(env);
