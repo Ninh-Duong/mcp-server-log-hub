@@ -62,7 +62,7 @@ export function registerQueryTools(server: McpServer, prefix: string, service: L
       stream: z.string().optional().describe('OpenObserve log stream returned by list_openobserve_streams; inspect its schema before writing SQL.'),
       query: z.string().optional().describe('Seq filter expression or one read-only OpenObserve SELECT statement. Use fields from stream schema.'),
       from: z.string().optional().describe("Inclusive OpenObserve lower time bound as ISO 8601 with timezone or relative duration ('15m', '1h', '24h', '7d'); server converts it to API microseconds."),
-      to: z.string().optional().describe('Exclusive OpenObserve upper time bound as ISO 8601 with timezone; server converts it to API microseconds.'),
+      to: z.string().optional().describe("Exclusive OpenObserve upper time bound as ISO 8601 with timezone or relative duration ('15m', '1h', '24h', '7d'; means that long ago); defaults to now. Server converts it to API microseconds."),
       limit: z.number().int().min(1).max(500).optional().default(50).describe('Maximum number of log events to return (1-500, default: 50).'),
       level,
       env,

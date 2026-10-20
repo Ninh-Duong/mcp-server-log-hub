@@ -41,7 +41,7 @@ Not cloned yet: `Clone <REPO_URL>, then read docs/AI_AGENT_SETUP.md in it and fo
 | transport | stdio (local process) |
 | command | `node` (or the absolute node path, see step 3) |
 | args | `["<MCP_LOGS_PATH>/start.mjs"]` where `<MCP_LOGS_PATH>` is the clone's absolute path |
-| env | optional: `OPENOBSERVE_ENV` = default environment for calls without `env` (else `dev`); `SEQ_SERVER_URL`, `SEQ_API_KEY` |
+| env | optional: `OPENOBSERVE_ENV` = default environment for calls without `env` (else the `OPENOBSERVE_URL`/`EMAIL`/`TOKEN` variables, else `dev` if its file has a URL); `SEQ_SERVER_URL`, `SEQ_API_KEY` |
 
 `start.mjs` installs dependencies, rebuilds when `src/` changed, then starts the server, so the entry never needs `npm` or `npx`.
 
@@ -332,7 +332,7 @@ list_openobserve_organizations  { "env": "prod" }
 get_openobserve_service_logs    { "env": "prod", "organization": "…", "stream": "…", "level": "Error", "from": "1h" }
 ```
 
-- `env` picks `config/openobserve.<env>.env` for that call only. Without `env`, the default is used: `OPENOBSERVE_ENV` from the entry, else `dev`.
+- `env` picks `config/openobserve.<env>.env` for that call only. Without `env`, the default is used: `OPENOBSERVE_ENV` from the entry, else `OPENOBSERVE_URL` / `OPENOBSERVE_EMAIL` / `OPENOBSERVE_TOKEN` from the entry, else `config/openobserve.dev.env` if it has a URL, else no default (pass `env`).
 - `read_ai_context` needs no `env`: it uses the environment written in the export.
 - An environment works once its file is filled in (step 5); no change to the client config is needed.
 - Seq: `SEQ_SERVER_URL` / `SEQ_API_KEY` in the entry's `env` win over `config/seq.env`. Prefer the file, so the key is not in the client config:
@@ -361,7 +361,7 @@ get_openobserve_service_logs    { "env": "prod", "organization": "…", "stream"
 
 ## 7. After connecting
 
-- Start with the prompts `investigate_api_bug` (bug report → live log search) or `analyze_ai_context` (question → read an export → compare with source).
+- Start with the prompts (direct connection only; under mcp-hub see [README](../README.md#-running-under-mcp-hub)) `investigate_api_bug` (bug report → live log search) or `analyze_ai_context` (question → read an export → compare with source).
 - ai-context exports are read **only** through `list_ai_context_snapshots` and `read_ai_context`: `SUMMARY.lhub` first, then the `file:line` it points to, then the request's `rcid/` file. Never open `.lhub` files or the `ai-context/` folder with file tools.
-- The server sends these rules as MCP server instructions on connect. Optional rule for the consuming repository: see [README](../README.md#using-it-from-another-repository-eg-antigravity-on-your-backend-repo).
+- The server sends these rules as MCP server instructions on connect (direct connection only; under mcp-hub the hub's contract `../mcp-hub/docs/mcps/mcp-server-logs.md` replaces them). Optional rule for the consuming repository: see [README](../README.md#using-it-from-another-repository-eg-antigravity-on-your-backend-repo).
 - Full tool list: [AGENTS.md §4](../AGENTS.md#4-mcp-tools-reference).

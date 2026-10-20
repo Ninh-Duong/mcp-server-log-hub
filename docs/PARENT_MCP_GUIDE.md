@@ -27,7 +27,7 @@ const masterServer = new McpServer({
 
 // 2. Mount mcp-server-logs tools with an optional namespace prefix
 registerLogsTools(masterServer, {
-  prefix: 'logs_', // e.g. 'logs_query_logs', 'logs_export_openobserve_logs'
+  prefix: 'logs__', // e.g. 'logs__query_logs', 'logs__export_openobserve_logs' (the mcp-hub alias prefix)
 });
 
 // 3. Mount your other child features (e.g. database tools, metrics, deployment)
@@ -41,7 +41,7 @@ await masterServer.connect(transport);
 
 `registerLogsTools` registers 12 tools and 2 prompts (`investigate_api_bug`, `analyze_ai_context`), all with the prefix (see the list in [AGENTS.md](../AGENTS.md#4-mcp-tools-reference)). Every tool has a `title` and annotations: all are read-only except `export_openobserve_logs`, which writes a new folder under `ai-context/`. Agents can start with a prompt and follow its tool workflow. In-process, the mcp-server-logs reads its accounts from its own `config/` folder and environment variables, as in standalone mode.
 
-One child serves every OpenObserve environment: its OpenObserve tools take an optional `env` (`dev`, `stg`, `prod`) per call, so mount it once (e.g. `logs_get_openobserve_service_logs({ env: 'prod', … })`), not once per environment.
+One child serves every OpenObserve environment: its OpenObserve tools take an optional `env` (`dev`, `stg`, `prod`) per call, so mount it once (e.g. `logs__get_openobserve_service_logs({ env: 'prod', … })`), not once per environment.
 
 Server instructions are set when a server is created, so mounting tools does not add them. The standalone server sends `logsInstructions()`, which tells agents to read ai-context only through `read_ai_context` and in which order. Append it to your own instructions, with the same prefix:
 
@@ -50,9 +50,9 @@ import { logsInstructions, registerLogsTools } from 'mcp-server-logs';
 
 const masterServer = new McpServer(
   { name: 'my-master-orchestrator', version: '2.0.0' },
-  { instructions: `My orchestrator tools …\n\n${logsInstructions('logs_')}` },
+  { instructions: `My orchestrator tools …\n\n${logsInstructions('logs__')}` },
 );
-registerLogsTools(masterServer, { prefix: 'logs_' });
+registerLogsTools(masterServer, { prefix: 'logs__' });
 ```
 
 ---
@@ -71,6 +71,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 // 1. Create client connection pointing to mcp-server-logs
+//    (mcp-hub instead expects a sibling layout: cwd ../mcp-server-logs, see ../mcp-hub/docs/mcps/mcp-server-logs.md)
 const transport = new StdioClientTransport({
   command: 'node',
   args: ['./sub-mcps/mcp-server-logs/start.mjs'],

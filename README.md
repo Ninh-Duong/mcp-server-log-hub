@@ -42,7 +42,7 @@ Which OpenObserve account MCP mode uses:
 - Calls without `env` use the default: `OPENOBSERVE_ENV` picks `config/openobserve.<env>.env` (its values win over `OPENOBSERVE_*` variables); without it, `OPENOBSERVE_URL` / `OPENOBSERVE_EMAIL` / `OPENOBSERVE_TOKEN` from the MCP client `env` block, else `config/openobserve.dev.env` when it has a URL.
 - Seq: `SEQ_SERVER_URL` / `SEQ_API_KEY` variables win over `config/seq.env`.
 
-Optional settings (`LOG_DIR`, `AI_CONTEXT_DIR`, `OPENOBSERVE_ENV`, `AI_CONTEXT_TIME_ZONE`) can go in a root `.env`; see `.env.example`.
+Optional settings (`LOG_DIR`, `CONFIG_DIR`, `AI_CONTEXT_DIR`, `OPENOBSERVE_ENV`, `AI_CONTEXT_TIME_ZONE`) can go in a root `.env`; see `.env.example`.
 
 ### 2. Configure Credentials
 Keep a separate logging account for each provider. For Seq, run `npm run cli`, choose **1. Seq** and enter the connection details; they are saved in the Git-ignored `config/seq.env`. For OpenObserve, the first start creates `config/openobserve.dev.env`, `config/openobserve.stg.env` and `config/openobserve.prod.env` from `config/openobserve.env.example`; fill in that environment's URL, service-account email and token (a Basic credential in `OPENOBSERVE_TOKEN` is split into email and token automatically). Example placeholders (`your_…`, `…@example.com`) count as empty. The CLI only reads these files: choosing **2. Observe** → **DEV / STG / PROD** connects with that file, or reports `Connect failed: … missing or incomplete (…)` listing what to fill in. OpenObserve uses a service-account email and token, not the browser session cookie. See [the OpenObserve guide](docs/OPENOBSERVE_GUIDE.md) for token creation, Organization permissions, CLI use, and MCP tools.
@@ -56,6 +56,18 @@ Or run the non-interactive preflight check:
 ```bash
 npm run preflight
 ```
+
+---
+
+## 🔀 Running under mcp-hub
+
+If you use [mcp-hub](../mcp-hub/README.md), the hub starts this server for you; skip the direct-connection steps below.
+
+- Clone this repo next to `mcp-hub`, in the same parent folder: the hub template runs `node start.mjs` with `cwd: ../mcp-server-logs`.
+- Setup steps: `../mcp-hub/README.md` (Default setup). Tool contract: `../mcp-hub/docs/mcps/mcp-server-logs.md`.
+- Fill `config/openobserve.<env>.env` for dev, stg and prod (the hub smoke check calls each), then run `node start.mjs --preflight` once before first use.
+- Do not also register a direct `mcp-logs` server in the same client; every tool would appear twice.
+- The hub exposes the tools as `logs__<tool>` (e.g. `logs__query_logs`). It does not forward this server's MCP instructions or prompts (`investigate_api_bug`, `analyze_ai_context`); agents get the hub's contract instead.
 
 ---
 
@@ -164,6 +176,7 @@ The agent working in your backend repo starts this repository as an MCP server a
 Backend repo open in Antigravity
   AI agent ──► client starts: node <this repo>/start.mjs   (installs/builds if needed; one server for dev/stg/prod)
            ◄── on connect, server instructions: "read ai-context only through read_ai_context, never open .lhub files"
+                (direct connection only; under mcp-hub the agent gets the hub's contract)
   AI agent ──► list_ai_context_snapshots ─► read_ai_context (SUMMARY → file:line → rcid/)
                                                └─ each call: account for that env ↔ organization → decrypt in memory
   AI agent ──► compares the logs with the backend source in its own workspace
@@ -184,7 +197,7 @@ Backend repo open in Antigravity
 2. **Ask.** Use the `analyze_ai_context` prompt (question, optional export folder), or [copy-paste prompt 3](#3-analyse-the-newest-ai-context-export).
 3. **Optional rule in the backend repo**, so you do not have to repeat it: [copy-paste prompt 5](#5-optional-rule-for-the-workspace-so-you-never-repeat-the-reading-order).
 
-The server already sends the same rules as MCP *server instructions* when the agent connects, so most agents follow them without the extra rule.
+The server already sends the same rules as MCP *server instructions* when the agent connects, so most agents follow them without the extra rule (direct connection only; under mcp-hub see [Running under mcp-hub](#-running-under-mcp-hub)).
 
 **Lifecycle and resources.** The client starts the server once (when it opens, or when you enable the server) and keeps it for the whole session; it is not started per call. It exits when the client closes it (closing the app, disabling or refreshing the server). Measured on Windows:
 
@@ -219,7 +232,7 @@ import { registerLogsTools } from 'mcp-server-logs';
 const masterMcp = new McpServer({ name: 'master-orchestrator', version: '1.0.0' });
 
 // Mount mcp-server-logs tools with an optional namespace prefix
-registerLogsTools(masterMcp, { prefix: 'logs_' });
+registerLogsTools(masterMcp, { prefix: 'logs__' });
 ```
 
 See [docs/PARENT_MCP_GUIDE.md](docs/PARENT_MCP_GUIDE.md) for full instructions and examples.

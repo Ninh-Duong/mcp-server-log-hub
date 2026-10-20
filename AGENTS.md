@@ -103,7 +103,7 @@ Then add tests with a fake server (see `src/tests/seq.test.ts`).
   - `stream` *(optional string)*: OpenObserve log stream when `query` is omitted.
   - `query` *(optional string)*: Seq filter expression, or exactly one read-only OpenObserve `SELECT` statement.
   - `from` *(optional string)*: ISO timestamp or `'15m'`, `'1h'`, `'24h'`, `'7d'`.
-  - `to` *(optional string)*: ISO timestamp.
+  - `to` *(optional string)*: ISO timestamp or `'15m'`, `'1h'`, `'24h'`, `'7d'` (that long ago); default now.
   - `limit` *(optional number, 1-500, default 50)*: Maximum records to return.
   - `level` *(optional string or string[])*: `'Verbose' | 'Debug' | 'Information' | 'Warning' | 'Error' | 'Fatal'`. One level = minimum severity (`'Warning'` → Warning, Error, Fatal); an array = exactly those levels.
   - `env` *(optional `'dev' | 'stg' | 'prod'`)*: OpenObserve account for this call (`config/openobserve.<env>.env`); omit for the server default.
@@ -114,7 +114,7 @@ OpenObserve also exposes `list_openobserve_organizations`, `list_openobserve_str
 
 **Tool rule**: register tools with `server.registerTool(name, { title, description, inputSchema, annotations }, handler)` (not the deprecated `server.tool`), wrap the body in `run(toolName, …)` (or `runIn(toolName, env, …)` for OpenObserve tools) from `src/tools/common.ts`, and set `readOnlyHint` (false only for tools that write, like `export_openobserve_logs`) and `openWorldHint` (true when it calls OpenObserve or Seq).
 
-**Prompts and server instructions**: prompts `investigate_api_bug` (bug report → live SQL search) and `analyze_ai_context` (question → read an export through `read_ai_context` → compare with the caller's source). On connect the server sends `logsInstructions()` (`src/tools/index.ts`) as MCP server instructions. It is the only guidance an agent in another repository gets, because that agent never sees this file. When a tool or rule changes, update those instructions in the same change.
+**Prompts and server instructions**: prompts `investigate_api_bug` (bug report → live SQL search) and `analyze_ai_context` (question → read an export through `read_ai_context` → compare with the caller's source). On connect the server sends `logsInstructions()` (`src/tools/index.ts`) as MCP server instructions. It is the only guidance an agent in another repository gets over a direct connection, because that agent never sees this file (under mcp-hub, agents get the hub's contract instead: `../mcp-hub/docs/mcps/mcp-server-logs.md`). When a tool or rule changes, update those instructions in the same change.
 
 **ai-context rule**: the `.lhub` extension, the `LHUB3` magic and the HKDF info `'mcp-log-hub/ai-context/v1'` (`src/ai-context/lhub.ts`) are frozen file-format constants from the project's earlier name: never rename them, or every existing export becomes unreadable. `.lhub` files are encrypted with the OpenObserve organization identifier. Never open them with file tools or write code that decrypts them outside `src/ai-context/`; read them only through `read_ai_context`, which first checks that the account in `config/openobserve.<env>.env` connects and is enabled for the export's organization. Reading order: `SUMMARY.lhub` (whole export, Bugs table) → the `services/<service>/<level>.lhub` line it points to → that request's `rcid/` file. Folder and file names are plaintext (range, services, levels, row count, rcid values); never put log content or an organization identifier in a name. Never write an organization identifier to disk (`ai-context/`, `logs/`, file headers); use the organization name.
 
@@ -128,10 +128,10 @@ This repository is designed to be consumed as a feature by a Master MCP.
 - If integrating inside a parent server in the same Node process, use:
   ```typescript
   import { registerLogsTools } from 'mcp-server-logs';
-  registerLogsTools(parentServer, { prefix: 'logs_' });
+  registerLogsTools(parentServer, { prefix: 'logs__' });
   ```
 - If running as a child subprocess, spawn `node start.mjs` (auto-installs and builds) using `StdioClientTransport`.
 
 Refer to `docs/PARENT_MCP_GUIDE.md` for comprehensive integration examples.
 
-To connect this server to an AI client (Antigravity, Claude Code, Cursor, Copilot, Codex, …), follow `docs/AI_AGENT_SETUP.md`. When the launch command, env variables or tool names change, update that file in the same change.
+To connect this server to an AI client (Antigravity, Claude Code, Cursor, Copilot, Codex, …), follow `docs/AI_AGENT_SETUP.md`. When the launch command, env variables or tool names change, update that file in the same change, plus the mcp-hub contract `../mcp-hub/docs/mcps/mcp-server-logs.md` and its allowlist template `../mcp-hub/config/hub.example.json`.

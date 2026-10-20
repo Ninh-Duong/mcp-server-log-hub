@@ -35,7 +35,7 @@ export const READ_REMOTE = { readOnlyHint: true, openWorldHint: true } as const;
 export const READ_LOCAL = { readOnlyHint: true, openWorldHint: false } as const;
 
 export const env = z.enum(OPENOBSERVE_ENVS).optional()
-  .describe("OpenObserve environment ('dev', 'stg', 'prod'): uses config/openobserve.<env>.env for this call. Omit for the server default (OPENOBSERVE_ENV, else dev). Use the same env for every call of one investigation.");
+  .describe("OpenObserve environment ('dev', 'stg', 'prod'): uses config/openobserve.<env>.env for this call. Omit for the server default (OPENOBSERVE_ENV, else the OPENOBSERVE_URL/EMAIL/TOKEN variables, else dev if its file has a URL). Use the same env for every call of one investigation.");
 export const organization = z.string().min(1).describe('Organization identifier from list_openobserve_organizations.');
 export const stream = z.string().min(1).describe('Log stream from list_openobserve_streams.');
 export const level = z.union([z.enum(LOG_LEVELS), z.array(z.enum(LOG_LEVELS)).min(1)]).optional()
