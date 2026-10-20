@@ -13,14 +13,14 @@
         "zod": "^3.24.2"
       },
       "bin": {
-        "mcp-server-logs": "dist/index.js"
+        "mcp-server-logs": "cli.mjs"
       },
       "devDependencies": {
         "@types/node": "^22.13.10",
         "typescript": "^5.8.2"
       },
       "engines": {
-        "node": ">=18.0.0"
+        "node": ">=22"
       }
     },
     "node_modules/@hono/node-server": {

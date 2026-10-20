@@ -41,7 +41,7 @@ export async function startMcpServer(): Promise<McpServer> {
 }
 
 // Execution dispatch: CLI menu, Preflight check, or MCP Stdio server
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.includes('--cli') || args.includes('-c')) {

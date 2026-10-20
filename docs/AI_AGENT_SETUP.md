@@ -43,7 +43,7 @@ Not cloned yet: `Clone <REPO_URL>, then read docs/AI_AGENT_SETUP.md in it and fo
 | args | `["<MCP_LOGS_PATH>/start.mjs"]` where `<MCP_LOGS_PATH>` is the clone's absolute path |
 | env | optional: `OPENOBSERVE_ENV` = default environment for calls without `env` (else the `OPENOBSERVE_URL`/`EMAIL`/`TOKEN` variables, else `dev` if its file has a URL); `SEQ_SERVER_URL`, `SEQ_API_KEY` |
 
-`start.mjs` installs dependencies, rebuilds when `src/` changed, then starts the server, so the entry never needs `npm` or `npx`.
+The client launches `node start.mjs`. The launcher needs npm on the client's PATH to install or repair dependencies and rebuild when `src/` changed. Run the first preflight in a terminal before connecting to avoid a startup timeout.
 
 JSON form (most clients):
 
@@ -84,10 +84,12 @@ Know which client you are running in (your own system prompt or product name usu
 ### Step 3: Check Node.js 22+
 ```bash
 node -v
+npm -v
 ```
 If it is older than 22, or missing, stop: ask the user to install Node 22 LTS or newer (https://nodejs.org).
 Also record the absolute path of node (`where node` on Windows, `which node` elsewhere). GUI apps (Claude Desktop, Cursor, JetBrains, …) started from the Start menu or Dock may not see a node that nvm/fnm/volta put on your shell PATH. Use the absolute path as `command` if the server fails to spawn (§6).
-**Done when** the version is 22 or newer.
+Check that npm is also available on the AI client's PATH; source installation, repair and builds invoke it even though the configured launch command is `node`.
+**Done when** Node is 22 or newer and npm is available.
 
 ### Step 4: Install, build and create the account files
 ```bash

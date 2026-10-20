@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { PROJECT_ROOT } from '../config.js';
 
 test('MCP stdio: stdout carries only JSON-RPC and lists every tool', async () => {
-  const child = spawn(process.execPath, ['dist/index.js'], { cwd: PROJECT_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['cli.mjs'], { cwd: PROJECT_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
   let stdout = '';
   const replies = new Map<number, { result?: { tools?: Array<{ name: string }>; instructions?: string } }>();
   child.stdout.setEncoding('utf8').on('data', (chunk: string) => {

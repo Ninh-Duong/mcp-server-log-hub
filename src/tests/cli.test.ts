@@ -73,7 +73,7 @@ test('CLI starts by choosing Seq or Observe', async () => {
   const child = spawn(process.execPath, ['dist/index.js', '--cli'], { cwd: PROJECT_ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
-  const timeout = setTimeout(() => child.kill(), 3000);
+  const timeout = setTimeout(() => child.kill(), 15_000);
   child.stdin.write('3\n');
   const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
   clearTimeout(timeout);

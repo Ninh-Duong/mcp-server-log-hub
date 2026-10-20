@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "mcp-server-logs": "./dist/index.js"
+    "mcp-server-logs": "./cli.mjs"
   },
   "exports": {
     ".": {
@@ -21,7 +21,8 @@
     "cli": "node start.mjs --cli",
     "preflight": "node start.mjs --preflight",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "check:package": "node scripts/check-package.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
@@ -45,6 +46,8 @@
   "author": "",
   "license": "MIT",
   "files": [
+    "cli.mjs",
+    "npm-shrinkwrap.json",
     "dist",
     "!dist/tests",
     "config/*.example"

@@ -2,7 +2,7 @@
 // Launcher: ensures Node version, dependencies, and a fresh build before running dist/index.js.
 // Stdlib only (runs before node_modules exists). Never writes to stdout: in MCP mode stdout is JSON-RPC.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { totalmem } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,10 +21,24 @@ const npm = (...args) => {
   if (r.status !== 0) fail(`'npm ${args.join(' ')}' failed. Fix the error above, then run again.`);
 };
 
-// Reinstall when node_modules is missing or older than the lockfile (e.g. after git pull).
+// Check the locked tree and actual import graph: an interrupted install can leave a fresh marker.
+const lock = existsSync(at('npm-shrinkwrap.json')) ? at('npm-shrinkwrap.json') : at('package-lock.json');
+const dependenciesReady = () => {
+  try {
+    const packages = JSON.parse(readFileSync(lock, 'utf8')).packages;
+    if (Object.entries(packages).some(([path, pkg]) => path && !pkg.optional && !existsSync(at(path, 'package.json')))) return false;
+    return spawnSync(process.execPath, ['--input-type=module', '-e',
+      "import '@modelcontextprotocol/sdk/server/mcp.js'; import '@modelcontextprotocol/sdk/server/stdio.js'; import 'zod'; import 'typescript';",
+    ], { cwd: root, stdio: 'ignore' }).status === 0;
+  } catch {
+    return false;
+  }
+};
+
+// Reinstall when dependencies are missing, incomplete, or older than the lockfile (e.g. after git pull).
 const installed = at('node_modules', '.package-lock.json');
-if (!existsSync(installed) || mtime(at('package-lock.json')) > mtime(installed)) {
-  npm(existsSync(at('package-lock.json')) ? 'ci' : 'install', '--include=dev');
+if (!existsSync(installed) || mtime(lock) > mtime(installed) || !dependenciesReady()) {
+  npm(existsSync(lock) ? 'ci' : 'install', '--include=dev');
 }
 
 // Rebuild when dist is missing or any source file is newer (skipped in packaged installs without src/).

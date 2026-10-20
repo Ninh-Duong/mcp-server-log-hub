@@ -22,17 +22,18 @@ Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat,
 ## 🚀 Quick Start
 
 ### 1. Installation
-Requires Node.js 22+. Pick one:
+Requires Node.js 22+ and npm on PATH (including in the AI client's environment). Pick one:
 
 ```bash
-# From source (any OS): start.mjs checks Node, runs `npm ci` when node_modules is missing or
-# older than package-lock.json, rebuilds when src/ changed, then starts the server.
+# From source (any OS): start.mjs checks Node, runs `npm ci` when node_modules is missing,
+# incomplete or older than npm-shrinkwrap.json, rebuilds when src/ changed, then starts the server.
 git clone <REPO_URL>
 cd mcp-server-logs
 node start.mjs            # same as `npm start`; add --cli or --preflight
 
 # As a package: build a tarball and install it anywhere
-npm pack                  # -> mcp-server-logs-1.0.0.tgz (dist + config examples only)
+npm ci
+npm pack                  # -> mcp-server-logs-1.0.0.tgz (CLI, dist, lock and config examples)
 npm i -g ./mcp-server-logs-1.0.0.tgz
 mcp-server-logs --preflight
 ```
@@ -215,6 +216,7 @@ The one `mcp-logs` entry is one process for every environment; a second entry po
 
 ```bash
 npm test    # build, then every test with a fake OpenObserve/Seq in a temp folder; fails below 90% line coverage
+npm run check:package  # pack, install in a temp folder and run preflight without credentials or upstream calls
 ```
 
 Tests never touch the real `config/`, `logs/` or `ai-context/` and never call a real server. See [AGENTS.md](AGENTS.md) for the code layout and rules.
