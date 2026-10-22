@@ -6,32 +6,41 @@ import { LOGS_DIR } from '../config.js';
 export const maskOrg = (identifier: string | undefined): string | undefined => identifier && `${identifier.slice(0, 4)}…`;
 
 class ProcessLogger {
-  private logFilePath: string;
   private isCliMode: boolean = false;
+  private currentDate: string = '';
+  private currentFilePath: string = '';
 
-  constructor() {
-    if (!existsSync(LOGS_DIR)) {
+  public setCliMode(enabled: boolean): void {
+    this.isCliMode = enabled;
+  }
+
+  /** Resolves the date-partitioned log file: logs/YYYY/MM/mcp-process-YYYY-MM-DD.log */
+  public getLogFilePath(isoTimestamp: string = new Date().toISOString()): string {
+    const datePart = isoTimestamp.slice(0, 10);
+    if (datePart === this.currentDate && this.currentFilePath) return this.currentFilePath;
+    const [year, month] = datePart.split('-');
+    const dir = resolve(LOGS_DIR, year!, month!);
+    if (!existsSync(dir)) {
       try {
-        mkdirSync(LOGS_DIR, { recursive: true });
+        mkdirSync(dir, { recursive: true });
       } catch {
         // Ignored
       }
     }
-    this.logFilePath = resolve(LOGS_DIR, 'mcp-process.log');
-  }
-
-  public setCliMode(enabled: boolean): void {
-    this.isCliMode = enabled;
+    this.currentDate = datePart;
+    this.currentFilePath = resolve(dir, `mcp-process-${datePart}.log`);
+    return this.currentFilePath;
   }
 
   private write(level: string, message: string, meta?: unknown): void {
     const timestamp = new Date().toISOString();
     const metaStr = meta ? ` | ${typeof meta === 'object' ? JSON.stringify(meta) : meta}` : '';
     const line = `[${timestamp}] [${level.toUpperCase()}] ${message}${metaStr}\n`;
+    const targetFile = this.getLogFilePath(timestamp);
 
     // Persist to log file
     try {
-      appendFileSync(this.logFilePath, line, 'utf8');
+      appendFileSync(targetFile, line, 'utf8');
     } catch {
       // Avoid crash on disk write errors
     }
@@ -62,9 +71,10 @@ class ProcessLogger {
    * Retrieves the most recent log lines from the process log file
    */
   public getRecentLogs(maxLines: number = 30): string[] {
-    if (!existsSync(this.logFilePath)) return [];
+    const targetFile = this.getLogFilePath();
+    if (!existsSync(targetFile)) return [];
     try {
-      const content = readFileSync(this.logFilePath, 'utf8');
+      const content = readFileSync(targetFile, 'utf8');
       const lines = content.split('\n').filter(Boolean);
       return lines.slice(-maxLines);
     } catch {

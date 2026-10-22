@@ -8,7 +8,7 @@
 
 - **Stdlib First**: Always prefer Node.js standard libraries (`node:fs`, `node:path`, `node:readline`, `node:url`, native `fetch`) over adding npm packages.
 - **Zero Supply-Chain Bloat**: Never install packages like `axios`, `winston`, `pino`, `inquirer`, `lodash`, or `dotenv`. The codebase already has lean, battle-tested native implementations for all these.
-- **Stdio Integrity**: When operating in MCP mode, `process.stdout` is strictly reserved for JSON-RPC messages. **NEVER use `console.log()`** inside providers, services, or tools. Use `logger.info()`, `logger.warn()`, or `logger.error()`, which redirect to `logs/mcp-process.log` and `process.stderr`.
+- **Stdio Integrity**: When operating in MCP mode, `process.stdout` is strictly reserved for JSON-RPC messages. **NEVER use `console.log()`** inside providers, services, or tools. Use `logger.info()`, `logger.warn()`, or `logger.error()`, which redirect to `logs/YYYY/MM/mcp-process-YYYY-MM-DD.log` and `process.stderr`.
 - **Universal Portability**: Never hardcode absolute system paths (e.g. `C:\...` or `/home/...`). Always resolve directories relative to project root using `PROJECT_ROOT` from `src/config.ts`.
 - **Small, single-purpose code**: one file per responsibility, short functions named for what they do. When a function grows past a screen, split it into steps. See the code map below.
 - **Tests come with every change**: a new feature or bug fix lands with a test that fails without it (`src/tests/`). Bug fixes: write the failing test first. Run `npm test` before reporting completion; it fails on any failing test or below 90% lines / 80% branches / 90% functions coverage.

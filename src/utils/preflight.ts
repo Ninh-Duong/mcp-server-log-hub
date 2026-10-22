@@ -1,6 +1,8 @@
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { config, LOGS_DIR, OPENOBSERVE_ENVS, OpenObserveEnv, openObserveAccountFor } from '../config.js';
+import { logsInstructions, registerLogsTools } from '../tools/index.js';
 import { logger } from './logger.js';
 
 export interface PreflightCheckItem {
@@ -18,10 +20,17 @@ export interface PreflightResult {
 const MIN_NODE_MAJOR = 22;
 
 /**
- * Validates runtime environment, filesystem permissions, and provider configurations
+ * Validates runtime environment, filesystem permissions, provider configurations, and MCP tool schemas
  */
 export function runPreflightChecks(logToConsole: boolean = false): PreflightResult {
-  const items = [checkNode(), checkLogsFolder(), checkSeq(), checkOpenObserve(), ...OPENOBSERVE_ENVS.map(checkOpenObserveEnv)];
+  const items = [
+    checkNode(),
+    checkLogsFolder(),
+    checkMcpTools(),
+    checkSeq(),
+    checkOpenObserve(),
+    ...OPENOBSERVE_ENVS.map(checkOpenObserveEnv),
+  ];
   const result: PreflightResult = { ok: !items.some((item) => item.status === 'FAIL'), timestamp: new Date().toISOString(), items };
   logger.info(`Preflight diagnostics completed: ${result.ok ? 'PASSED' : 'FAILED'}`);
   if (logToConsole) printReport(result);
@@ -43,6 +52,26 @@ function checkLogsFolder(): PreflightCheckItem {
     return { name: 'Logs Storage', status: 'PASS', message: `Write access confirmed for logs folder: ${LOGS_DIR}` };
   } catch (err) {
     return { name: 'Logs Storage', status: 'FAIL', message: `Cannot write to logs directory (${LOGS_DIR}): ${(err as Error).message}` };
+  }
+}
+
+/** Verifies that McpServer registers all tools, prompts, and schemas without syntax or validation errors. */
+function checkMcpTools(): PreflightCheckItem {
+  try {
+    const server = new McpServer({ name: 'mcp-server-logs-preflight', version: '1.0.0' }, { instructions: logsInstructions() });
+    registerLogsTools(server);
+    const tools = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools || {});
+    const prompts = Object.keys((server as unknown as { _registeredPrompts: Record<string, unknown> })._registeredPrompts || {});
+    if (tools.length === 0) {
+      return { name: 'MCP Tools & Schema', status: 'FAIL', message: 'No MCP tools were registered.' };
+    }
+    return {
+      name: 'MCP Tools & Schema',
+      status: 'PASS',
+      message: `Verified ${tools.length} tools and ${prompts.length} prompts with valid schemas and instructions.`,
+    };
+  } catch (err) {
+    return { name: 'MCP Tools & Schema', status: 'FAIL', message: `MCP registration failed: ${(err as Error).message}` };
   }
 }
 

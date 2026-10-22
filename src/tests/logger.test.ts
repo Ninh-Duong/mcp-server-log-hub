@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { sep } from 'node:path';
 import { test } from 'node:test';
 import { config, LOGS_DIR } from '../config.js';
 import { logger } from '../utils/logger.js';
@@ -41,6 +43,12 @@ test('CLI mode prints only warnings and errors; info stays in the log file', () 
   }
 });
 
+test('partitions log files by year and month: logs/YYYY/MM/mcp-process-YYYY-MM-DD.log', () => {
+  const filePath = logger.getLogFilePath('2026-10-22T10:00:00.000Z');
+  assert.ok(filePath.endsWith(['2026', '10', 'mcp-process-2026-10-22.log'].join(sep)));
+  assert.ok(existsSync(filePath));
+});
+
 test('preflight reports each provider and the logs folder', () => {
   config.seq = { serverUrl: 'https://seq.example.test', apiKey: '' };
   config.openobserve = { env: 'dev', url: 'https://logs.example.test', email: 'r@example.test', token: 't' };
@@ -50,7 +58,7 @@ test('preflight reports each provider and the logs folder', () => {
   assert.equal(ok, true);
   const status = Object.fromEntries(items.map((i) => [i.name, i.status]));
   assert.deepEqual(status, {
-    'Node.js Runtime': 'PASS', 'Logs Storage': 'PASS', 'Seq Provider': 'WARN', 'OpenObserve Provider': 'PASS',
+    'Node.js Runtime': 'PASS', 'Logs Storage': 'PASS', 'MCP Tools & Schema': 'PASS', 'Seq Provider': 'WARN', 'OpenObserve Provider': 'PASS',
     'OpenObserve DEV': 'WARN', 'OpenObserve STG': 'WARN', 'OpenObserve PROD': 'WARN',
   }, 'one row per env file: none is filled in the test config folder');
   assert.match(items.find((i) => i.name === 'OpenObserve PROD')!.message, /config\/openobserve\.prod\.env/);

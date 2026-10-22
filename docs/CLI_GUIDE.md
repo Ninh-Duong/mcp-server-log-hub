@@ -29,7 +29,7 @@ With one window, the terminal shows the newest 50 rows. Answer `Save to ai-conte
 
 A larger export skips the preview. It asks once whether to fetch request flows. For each window it shows a live `fetched N rows…` line, then one result line. While it runs, the folder name ends in `_partial`.
 
-The terminal shows only that progress plus warnings and errors; per-request details stay in `logs/mcp-process.log`. See [large exports](OPENOBSERVE_GUIDE.md#large-exports).
+The terminal shows only that progress plus warnings and errors; per-request details stay in `logs/YYYY/MM/mcp-process-YYYY-MM-DD.log`. See [large exports](OPENOBSERVE_GUIDE.md#large-exports).
 
 - **Service & level** lists the services that logged in the range with log counts, then lets you pick a service (`0` = all) and levels (default `1,2` = Error and Warning; `5` = All).
 - **RCID** asks only for the value. It finds every log of that request whose `rcid`, `correlationid`, `trace_id` or `traceid` equals it, across all services and levels, and saves it as an export folder (`…_rcid-<value>_all-levels_<rows>`). If nothing matches, widen the range (e.g. Last 7 days).
@@ -37,6 +37,6 @@ The terminal shows only that progress plus warnings and errors; per-request deta
 
 Invalid input (an unknown menu number, a From in the future, From after To) prints `Error: …` and returns to the main menu.
 
-The first start creates `config/openobserve.<dev|stg|prod>.env` and `config/seq.env` from the examples for you to fill in. The credential files and the entire `logs/`, `log-work/` and `ai-context/` directories are ignored by Git. `logs/mcp-process.log` records provider endpoint, status, duration, result count, and failures without credentials, query values, or returned log contents. `npm run preflight` checks local configuration; selecting Observe in the CLI checks the real API connection. Start the MCP stdio server separately with `npm start`.
+The first start creates `config/openobserve.<dev|stg|prod>.env` and `config/seq.env` from the examples for you to fill in. The credential files and the entire `logs/`, `log-work/` and `ai-context/` directories are ignored by Git. `logs/YYYY/MM/mcp-process-YYYY-MM-DD.log` records provider endpoint, status, duration, result count, and failures without credentials, query values, or returned log contents. `npm run preflight` checks local configuration; selecting Observe in the CLI checks the real API connection. Start the MCP stdio server separately with `npm start`.
 
 See [OpenObserve log access](OPENOBSERVE_GUIDE.md) for account-token creation and Organization permissions.

@@ -54,7 +54,8 @@ export function registerOpenObserveTools(server: McpServer, prefix: string): voi
     title: 'Find logs by RCID',
     description: 'Find OpenObserve logs with an exact RCID in one accessible log stream.',
     inputSchema: {
-      env, organization, stream, rcid: z.string().min(1),
+      env, organization, stream,
+      rcid: z.string().min(1).describe('Exact request or correlation ID to find across logs.'),
       field: z.string().min(1).default('rcid').describe('Name of the RCID field in the stream.'),
       from: z.string().default('15m').describe('Lower time bound (default 15m).'), to, limit,
     },

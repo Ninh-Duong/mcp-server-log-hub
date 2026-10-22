@@ -357,7 +357,7 @@ get_openobserve_service_logs    { "env": "prod", "organization": "…", "stream"
 | `configured: false` / `WARN … unavailable` / `Missing OPENOBSERVE_URL … (PROD)` | That environment's `config/openobserve.<env>.env` is missing or still has placeholders. |
 | 401 / 403 from `list_openobserve_organizations` | Wrong email/token, or the service account is not enabled for the organization. See [OPENOBSERVE_GUIDE.md](OPENOBSERVE_GUIDE.md). |
 | `OpenObserve URL must use HTTPS` | Use the `https://` URL (plain HTTP is accepted only for localhost). |
-| Anything else | Server log: `<MCP_LOGS_PATH>/logs/mcp-process.log`. Client log: see your §4 subsection. |
+| Anything else | Server log: `<MCP_LOGS_PATH>/logs/YYYY/MM/mcp-process-YYYY-MM-DD.log`. Client log: see your §4 subsection. |
 
 ---
 

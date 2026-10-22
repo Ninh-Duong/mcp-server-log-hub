@@ -28,7 +28,7 @@ flowchart TD
     end
 
     subgraph Storage["Local Storage"]
-        LogFile["logs/mcp-process.log"]
+        LogFile["logs/YYYY/MM/mcp-process-YYYY-MM-DD.log"]
     end
 
     CLI -->|Interactive Menu| Router
@@ -63,7 +63,7 @@ On connect, the server sends instructions (`logsInstructions()` in `src/tools/in
 ### Pillar B: Stdio Transport Integrity
 In the Model Context Protocol, any data written to standard output (`stdout`) that is not valid JSON-RPC breaks the client connection.
 - **Rule**: `process.stdout` is exclusively reserved for `@modelcontextprotocol/sdk`.
-- **Diagnostics & Errors**: Routed to `process.stderr` and appended to `logs/mcp-process.log`.
+- **Diagnostics & Errors**: Routed to `process.stderr` and appended to `logs/YYYY/MM/mcp-process-YYYY-MM-DD.log`.
 - **Interactive UI**: Only rendered when explicitly started in CLI mode (`--cli`).
 
 ### Pillar C: Provider Adapter Pattern

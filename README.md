@@ -12,7 +12,7 @@ Built for **100% AI Vibe-Coding**, maximum portability, zero supply-chain bloat,
 - **Dual-Mode Architecture**:
   - **Standalone Mode**: Runs over stdio JSON-RPC or interactive terminal CLI.
   - **Parent MCP Integration**: Can be mounted in-process into a Master MCP orchestrator via `registerLogsTools()` with custom namespaces.
-- **Strict Stdio Safety**: `stdout` is 100% reserved for JSON-RPC; diagnostics and errors are isolated to `process.stderr` and `logs/mcp-process.log`.
+- **Strict Stdio Safety**: `stdout` is 100% reserved for JSON-RPC; diagnostics and errors are isolated to `process.stderr` and `logs/YYYY/MM/mcp-process-YYYY-MM-DD.log`.
 - **Zero-Bloat Engineering (Ponytail)**: Only 2 dependencies (`@modelcontextprotocol/sdk` and `zod`). Uses native `fetch`, native `node:readline`, and stdlib file streaming.
 - **Preflight Diagnostics**: Automated startup health scanner checking Node version, directory write permissions, and provider credentials.
 - **Universal Portability**: Strictly uses relative path resolution. Deploy anywhere (Windows, macOS, Linux, Docker).
