@@ -18,6 +18,7 @@ export interface SnapshotMeta {
   sql?: string;
   /** Framework noise rows were downloaded too instead of only counted */
   includeNoise?: boolean;
+  cache?: boolean;
 }
 
 export interface ExportResult {
@@ -92,6 +93,20 @@ export function compact(entry: LogEntry): Record<string, unknown> {
   };
 }
 
+/** Reconstructs a LogEntry from a compact JSONL record. */
+export function uncompact(raw: Record<string, unknown>, provider = 'openobserve'): LogEntry {
+  const ids = (raw.ids && typeof raw.ids === 'object' ? raw.ids : {}) as Record<string, unknown>;
+  const attrs = (raw.attrs && typeof raw.attrs === 'object' ? raw.attrs : {}) as Record<string, unknown>;
+  return {
+    timestamp: typeof raw.ts === 'string' ? raw.ts : new Date().toISOString(),
+    level: (typeof raw.level === 'string' ? raw.level : 'Information') as LogLevel,
+    service: typeof raw.service === 'string' ? raw.service : undefined,
+    message: typeof raw.message === 'string' ? raw.message : '',
+    provider,
+    metadata: { ...ids, ...attrs },
+  };
+}
+
 /** Pattern identity shared by grouping and flow sampling. The exception often holds the root cause behind a generic message. */
 export function patternOf(entry: LogEntry): { key: string; template: string; level: string; service: string } {
   const service = entry.service || '_unknown';
@@ -135,7 +150,8 @@ export function snapshotParent(meta: SnapshotMeta, baseDir: string): string {
 /** "<from>_<to>_<service>_<levels>" in local time: an export folder name without its row count. */
 export function exportLabel(meta: SnapshotMeta): string {
   const levels = meta.levels?.length ? meta.levels.join('-').toLowerCase() : 'all-levels';
-  return `${localStamp(meta.from)}_${localStamp(meta.to)}_${safe(meta.service || 'all-services')}_${safe(levels)}`;
+  const tag = meta.cache ? '_cache' : '';
+  return `${localStamp(meta.from)}_${localStamp(meta.to)}_${safe(meta.service || 'all-services')}_${safe(levels)}${tag}`;
 }
 
 /** Splits [from, to) into windows of at most windowMs, so a long range is fetched one window at a time. */

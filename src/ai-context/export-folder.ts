@@ -186,7 +186,7 @@ function finish(state: ExportState): ExportResult {
 
   const finalDir = renameFinished(state, total);
   const snapshot = toPosix(relative(state.baseDir, finalDir));
-  prependIndexLine(state, snapshot, total, createdAt);
+  if (!state.meta.cache) prependIndexLine(state, snapshot, total, createdAt);
   return { dir: finalDir, snapshot, rows: total, duplicates: state.duplicates, flows: flowRows.length, truncated: state.truncated };
 }
 

@@ -3,9 +3,11 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { AI_CONTEXT_DIR } from '../config.js';
-import { LogEntry } from '../types.js';
+import { LogEntry, LogLevel } from '../types.js';
+import { logger } from '../utils/logger.js';
+import { startExport } from './export-folder.js';
 import { LHUB, LhubHeader, readLhub, readLhubHeader } from './lhub.js';
-import { SnapshotMeta, compact, snapshotParent, toPosix } from './model.js';
+import { SnapshotMeta, compact, safe, snapshotParent, toPosix, uncompact } from './model.js';
 
 /**
  * Absolute path of an export folder given relative to baseDir. Errors name only the relative folder: tool results never
@@ -25,10 +27,11 @@ export function snapshotFiles(dir: string): string[] {
 }
 
 /** Every export folder under baseDir (finished or `_partial`), newest first, with its SUMMARY header when finished. */
-export function listSnapshots(baseDir = AI_CONTEXT_DIR): Array<{ snapshot: string; header?: LhubHeader; partial: boolean; files: number }> {
+export function listSnapshots(baseDir = AI_CONTEXT_DIR, includeCache = false): Array<{ snapshot: string; header?: LhubHeader; partial: boolean; files: number }> {
   if (!existsSync(baseDir)) return [];
   const out: Array<{ snapshot: string; header?: LhubHeader; partial: boolean; files: number; at: number }> = [];
   for (const file of readdirSync(baseDir, { recursive: true }).map(String)) {
+    if (!includeCache && file.includes('_cache')) continue;
     const dir = join(baseDir, file);
     if (!/^\d{8}-\d{4}_\d{8}-\d{4}_/.test(file.split(sep).pop()!) || !statSync(dir).isDirectory()) continue;
     out.push({ snapshot: toPosix(file), header: summaryHeader(dir), partial: file.endsWith('_partial'), files: snapshotFiles(dir).length, at: statSync(dir).mtimeMs });
@@ -92,6 +95,7 @@ export function dropExported(entries: LogEntry[], meta: SnapshotMeta, orgKey: st
   const seen = new Set<string>();
   const seenIn: string[] = [];
   for (const name of existsSync(parent) ? readdirSync(parent) : []) {
+    if (name.includes('_cache')) continue;
     if (addSavedLines(join(parent, name, 'services'), orgKey, range, seen)) seenIn.push(name);
   }
   const fresh = seen.size ? entries.filter((entry) => !seen.has(lineHash(JSON.stringify(compact(entry))))) : entries;
@@ -108,4 +112,119 @@ function addSavedLines(services: string, orgKey: string, range: { from: number; 
     } catch { /* another organization's key or an unreadable file */ }
   }
   return found;
+}
+
+
+/**
+ * Checks ai-context for cached logs matching an RCID.
+ */
+export function findCachedRcid(stream: string, rcid: string, orgKey: string, baseDir = AI_CONTEXT_DIR): LogEntry[] | undefined {
+  if (!rcid) return undefined;
+  const target = safe(rcid);
+  const snapshots = listSnapshots(baseDir, true).filter((s) => !s.partial && (!s.header || s.header.stream === stream));
+  for (const { snapshot } of snapshots) {
+    try {
+      const dir = exportDir(snapshot, baseDir);
+      const rcidDir = join(dir, 'rcid');
+      if (!existsSync(rcidDir)) continue;
+      const file = readdirSync(rcidDir).find((f) => f.endsWith(LHUB) && f.includes(target));
+      if (file) {
+        const { text } = readLhub(join(rcidDir, file), orgKey);
+        const entries: LogEntry[] = [];
+        for (const line of text.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            entries.push(uncompact(JSON.parse(line)));
+          } catch { /* skip unparseable */ }
+        }
+        if (entries.length) return entries;
+      }
+    } catch { /* unreadable with this orgKey or corrupt */ }
+  }
+  return undefined;
+}
+
+/**
+ * Checks ai-context for cached logs covering a service and time range.
+ */
+export function findCachedLogs(params: { stream: string; service?: string; levels?: LogLevel[]; from: string; to: string }, orgKey: string, baseDir = AI_CONTEXT_DIR): LogEntry[] | undefined {
+  const fromMs = Date.parse(params.from);
+  const toMs = Date.parse(params.to);
+  if (isNaN(fromMs) || isNaN(toMs)) return undefined;
+
+  const targetLevels = params.levels ? new Set(params.levels.map((l) => l.toLowerCase())) : undefined;
+  const snapshots = listSnapshots(baseDir, true).filter((s) => !s.partial && s.header && s.header.stream === params.stream);
+
+  for (const { snapshot, header } of snapshots) {
+    if (!header) continue;
+    const snapFrom = Date.parse(header.from);
+    const snapTo = Date.parse(header.to);
+    if (isNaN(snapFrom) || isNaN(snapTo) || snapFrom > fromMs || snapTo < toMs) continue;
+    if (params.service && header.service && header.service !== 'all-services' && header.service !== params.service) continue;
+
+    try {
+      const dir = exportDir(snapshot, baseDir);
+      const servicesDir = join(dir, 'services');
+      if (!existsSync(servicesDir)) continue;
+
+      const svcDirs = params.service ? [join(servicesDir, safe(params.service))] : readdirSync(servicesDir).map((d) => join(servicesDir, d));
+      const entries: LogEntry[] = [];
+
+      for (const svcDir of svcDirs) {
+        if (!existsSync(svcDir) || !statSync(svcDir).isDirectory()) continue;
+        const files = readdirSync(svcDir).filter((f) => f.endsWith(LHUB));
+        for (const file of files) {
+          const levelName = file.replace(/\.lhub$/i, '').toLowerCase();
+          if (targetLevels && !targetLevels.has(levelName)) continue;
+          const { text } = readLhub(join(svcDir, file), orgKey, { from: fromMs, to: toMs });
+          for (const line of text.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const entry = uncompact(JSON.parse(line));
+              const ts = Date.parse(entry.timestamp);
+              if (ts >= fromMs && ts <= toMs) entries.push(entry);
+            } catch { /* skip unparseable */ }
+          }
+        }
+      }
+
+      entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      return entries;
+    } catch { /* unreadable with this orgKey */ }
+  }
+  return undefined;
+}
+
+/**
+ * Clones fetched logs to an ai-context snapshot so future calls hit local cache.
+ */
+export function cloneLogsToAiContext(meta: SnapshotMeta, orgKey: string, logs: LogEntry[], baseDir = AI_CONTEXT_DIR): string | undefined {
+  if (!logs.length) return undefined;
+  try {
+    const out = startExport({ ...meta, cache: true }, { orgKey, baseDir });
+    out.addWindow(logs, { from: meta.from, to: meta.to });
+    const result = out.finish();
+    logger.info('ai_context.cloned_logs', { snapshot: result.snapshot, rows: logs.length });
+    return result.snapshot;
+  } catch (err) {
+    logger.warn('ai_context.clone_logs_failed', { errorType: err instanceof Error ? err.name : 'UnknownError' });
+    return undefined;
+  }
+}
+
+/**
+ * Clones fetched RCID flow logs to an ai-context snapshot.
+ */
+export function cloneRcidToAiContext(meta: SnapshotMeta, orgKey: string, rcid: string, field = 'rcid', logs: LogEntry[], baseDir = AI_CONTEXT_DIR): string | undefined {
+  if (!logs.length) return undefined;
+  try {
+    const out = startExport({ ...meta, service: safe(`rcid-${rcid}`), cache: true }, { orgKey, baseDir });
+    out.addFlows([{ field, value: rcid, entries: logs }]);
+    const result = out.finish();
+    logger.info('ai_context.cloned_rcid', { snapshot: result.snapshot, rows: logs.length });
+    return result.snapshot;
+  } catch (err) {
+    logger.warn('ai_context.clone_rcid_failed', { errorType: err instanceof Error ? err.name : 'UnknownError' });
+    return undefined;
+  }
 }

@@ -58,13 +58,13 @@ export const LEVEL_WORDS: Record<LogLevel, string[]> = {
 };
 
 /** Where the service and level live in a stream: structured fields, or Kubernetes pod name + log text. */
-export function detectShape(fields: OpenObserveField[]): { serviceField: string; levelField?: string; k8s: boolean } {
+export function detectShape(fields: OpenObserveField[]): { serviceField?: string; levelField?: string; k8s: boolean } {
   const names = new Set(fields.map((f) => f.name));
   const levelField = ['severity', 'level'].find((n) => names.has(n));
   const structured = ['service_name', 'applicationname'].find((n) => names.has(n));
   if (structured) return { serviceField: structured, levelField, k8s: false };
   if (names.has('kubernetes_pod_name')) return { serviceField: 'kubernetes_pod_name', levelField, k8s: true };
-  throw new Error('No service field in this stream (looked for service_name, applicationname, kubernetes_pod_name)');
+  return { k8s: false };
 }
 
 /** SQL matching framework noise rows (NULL-safe), or undefined when the stream has no logger category and level. */

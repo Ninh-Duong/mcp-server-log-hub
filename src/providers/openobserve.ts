@@ -1,6 +1,7 @@
 import { openObserveAccount, openObserveAccountFor } from '../config.js';
+import { cloneLogsToAiContext, cloneRcidToAiContext, findCachedLogs, findCachedRcid } from '../ai-context/index.js';
 import { ExportAggregates, LogEntry, LogLevel, LogProvider, LogQuery, ProviderStatus, RequestFlow } from '../types.js';
-import { FLOW_ID_FIELDS, LEVEL_ALIASES, normalizeLogLevel, parseTimeBound } from './base.js';
+import { FLOW_ID_FIELDS, LEVEL_ALIASES, normalizeLogLevel, parseTimeBound, resolveLevels } from './base.js';
 import {
   LEVEL_WORDS, OpenObserveField, deploymentName, detectShape, levelFromText, noiseWhere, quoteIdentifier, quoteString, selectColumns, serviceOf, stripAnsi,
 } from './openobserve-sql.js';
@@ -310,16 +311,32 @@ export class OpenObserveProvider implements LogProvider {
 
   public async findByRcid(params: Omit<OpenObserveSearch, 'sql'> & { stream: string; field: string; rcid: string }): Promise<LogEntry[]> {
     if (!params.rcid.trim()) throw new Error('RCID is required');
+    const cached = findCachedRcid(params.stream, params.rcid, params.organization);
+    if (cached !== undefined) {
+      logger.info('ai_context.cache_hit', { stream: params.stream, rcid: params.rcid, count: cached.length });
+      return cached.slice(0, params.limit || 50);
+    }
     const operationId = params.operationId || randomUUID();
     const streams = await this.listStreams(params.organization, operationId);
     if (!streams.includes(params.stream)) throw new Error(`Log stream '${params.stream}' is not accessible`);
     const sql = `SELECT * FROM ${quoteIdentifier(params.stream)} WHERE ${quoteIdentifier(params.field)} = ${quoteString(params.rcid)} ORDER BY _timestamp DESC`;
-    return this.searchLogs({ ...params, sql, operationId });
+    const logs = await this.searchLogs({ ...params, sql, operationId });
+    if (logs.length > 0) {
+      const from = parseTimeBound(params.from || '15m') || new Date(Date.now() - 15 * 60_000).toISOString();
+      const to = (params.to ? parseTimeBound(params.to) : undefined) || new Date().toISOString();
+      const org = (await this.listOrganizations(operationId)).find((o) => o.identifier === params.organization);
+      cloneRcidToAiContext({
+        provider: this.name, env: openObserveAccount().env, organization: org?.name || 'default', stream: params.stream,
+        from, to, limit: params.limit || 50,
+      }, params.organization, params.rcid, params.field, logs);
+    }
+    return logs;
   }
 
   /** Services in a stream with log counts (and per-level counts when the stream has a level field). */
   public async listServices(params: Omit<OpenObserveServiceQuery, 'service' | 'levels' | 'limit'>): Promise<{ field: string; services: OpenObserveService[] }> {
     const shape = detectShape(await this.getStreamSchema(params.organization, params.stream));
+    if (!shape.serviceField) return { field: '', services: [] };
     const svc = quoteIdentifier(shape.serviceField);
     const lvl = shape.levelField && !shape.k8s ? quoteIdentifier(shape.levelField) : undefined;
     const groupBy = lvl ? `${svc}, ${lvl}` : svc;
@@ -350,9 +367,14 @@ export class OpenObserveProvider implements LogProvider {
     const schema = await this.getStreamSchema(params.organization, params.stream);
     const shape = detectShape(schema);
     const names = new Set(schema.map((f) => f.name));
-    const svc = quoteIdentifier(shape.serviceField);
-    const where = [`${svc} IS NOT NULL`];
-    if (params.service) where.push(shape.k8s ? `${svc} LIKE ${quoteString(params.service + '-%')}` : `${svc} = ${quoteString(params.service)}`);
+    const where: string[] = [];
+    if (shape.serviceField) {
+      const svc = quoteIdentifier(shape.serviceField);
+      where.push(`${svc} IS NOT NULL`);
+      if (params.service) where.push(shape.k8s ? `${svc} LIKE ${quoteString(params.service + '-%')}` : `${svc} = ${quoteString(params.service)}`);
+    } else {
+      where.push('1=1');
+    }
     if (params.levels?.length) {
       if (shape.levelField && !shape.k8s) {
         const values = [...new Set(params.levels.flatMap((l) => LEVEL_ALIASES[l]).flatMap((a) => [a, a.toLowerCase()]))];
@@ -414,6 +436,15 @@ export class OpenObserveProvider implements LogProvider {
    * includeNoise (count them with exportAggregates), and DROP_FIELDS columns are never selected.
    */
   public async searchServiceLogs(params: OpenObserveServiceQuery): Promise<LogEntry[]> {
+    const from = parseTimeBound(params.from || '1h');
+    const to = params.to ? parseTimeBound(params.to) : new Date().toISOString();
+    if (from && to) {
+      const cached = findCachedLogs({ stream: params.stream, service: params.service, levels: params.levels, from, to }, params.organization);
+      if (cached !== undefined) {
+        logger.info('ai_context.cache_hit', { stream: params.stream, service: params.service, count: cached.length });
+        return cached.slice(0, params.limit || 50);
+      }
+    }
     const q = await this.serviceQuery(params);
     const where = q.noise && !params.includeNoise ? `${q.where} AND NOT ${q.noise}` : q.where;
     const logs = await this.searchLogs({
@@ -421,7 +452,15 @@ export class OpenObserveProvider implements LogProvider {
       sql: `SELECT ${q.columns} FROM ${quoteIdentifier(params.stream)} WHERE ${where} ORDER BY _timestamp DESC`,
     });
     // ponytail: Kubernetes level and service are refined after fetch (level comes from log text), so results may under-fill `limit`.
-    return logs.filter((log) => (!params.service || log.service === params.service) && (!params.levels?.length || params.levels.includes(log.level as LogLevel)));
+    const filtered = logs.filter((log) => (!params.service || log.service === params.service) && (!params.levels?.length || params.levels.includes(log.level as LogLevel)));
+    if (from && to && filtered.length > 0) {
+      const org = (await this.listOrganizations()).find((o) => o.identifier === params.organization);
+      cloneLogsToAiContext({
+        provider: this.name, env: openObserveAccount().env, organization: org?.name || 'default', stream: params.stream,
+        service: params.service, levels: params.levels, from, to, limit: params.limit || Infinity,
+      }, params.organization, filtered);
+    }
+    return filtered;
   }
 
   /**
@@ -468,7 +507,30 @@ export class OpenObserveProvider implements LogProvider {
   public async queryLogs(params: LogQuery): Promise<LogEntry[]> {
     if (!params.organization) throw new Error('OpenObserve organization is required');
     if (!params.query && !params.stream) throw new Error('OpenObserve SQL query or stream is required');
+    if (params.stream && !params.query) {
+      const from = parseTimeBound(params.from || '15m');
+      const to = params.to ? parseTimeBound(params.to) : new Date().toISOString();
+      const levels = resolveLevels(params.level);
+      if (from && to) {
+        const cached = findCachedLogs({ stream: params.stream, levels, from, to }, params.organization);
+        if (cached !== undefined) {
+          logger.info('ai_context.cache_hit', { stream: params.stream, count: cached.length });
+          return cached.slice(0, params.limit || 50);
+        }
+      }
+    }
     const sql = params.query || `SELECT * FROM "${params.stream!.replace(/"/g, '""')}" ORDER BY _timestamp DESC`;
-    return this.searchLogs({ organization: params.organization, sql, from: params.from, to: params.to, limit: params.limit });
+    const stream = params.stream || sql.match(/FROM\s+["']?([^"'\s,;)]+)["']?/i)?.[1];
+    const logs = await this.searchLogs({ organization: params.organization, sql, from: params.from, to: params.to, limit: params.limit });
+    if (stream && logs.length > 0) {
+      const from = parseTimeBound(params.from || '15m') || new Date(Date.now() - 15 * 60_000).toISOString();
+      const to = (params.to ? parseTimeBound(params.to) : undefined) || new Date().toISOString();
+      const org = (await this.listOrganizations()).find((o) => o.identifier === params.organization);
+      cloneLogsToAiContext({
+        provider: this.name, env: openObserveAccount().env, organization: org?.name || 'default', stream,
+        from, to, limit: params.limit || 50,
+      }, params.organization, logs);
+    }
+    return logs;
   }
 }

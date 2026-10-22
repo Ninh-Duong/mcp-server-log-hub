@@ -2,6 +2,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { openObserveProvider } from '../providers/index.js';
+import { openObserveAccount } from '../config.js';
+import { cloneLogsToAiContext } from '../ai-context/index.js';
+import { parseTimeBound } from '../providers/base.js';
 import { resolveLevels } from '../providers/base.js';
 import { READ_REMOTE, env, json, level, limit, organization, runIn, stream, to } from './common.js';
 
@@ -78,6 +81,16 @@ export function registerOpenObserveTools(server: McpServer, prefix: string): voi
     annotations: READ_REMOTE,
   }, ({ env: e, ...args }) => runIn('search_openobserve_logs', e, async () => {
     const logs = await openObserveProvider.searchLogs(args);
+    const stream = args.sql.match(/FROM\s+["']?([^"'\s,;)]+)["']?/i)?.[1];
+    if (stream && logs.length > 0) {
+      const from = parseTimeBound(args.from || '15m') || new Date(Date.now() - 15 * 60_000).toISOString();
+      const to = (args.to ? parseTimeBound(args.to) : undefined) || new Date().toISOString();
+      const org = (await openObserveProvider.listOrganizations()).find((o) => o.identifier === args.organization);
+      cloneLogsToAiContext({
+        provider: openObserveProvider.name, env: openObserveAccount().env, organization: org?.name || 'default', stream,
+        from, to, limit: args.limit,
+      }, args.organization, logs);
+    }
     return json({ total: logs.length, search: args, logs });
   }));
 }

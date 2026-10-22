@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
-  appendFrame, createLhub, dropExported, listSnapshots, localStamp, messageTemplate, openSnapshot, readLhub,
-  readLhubHeader, snapshotFiles, fetchWindowMs, startExport, timeWindows,
+  appendFrame, cloneLogsToAiContext, cloneRcidToAiContext, createLhub, dropExported, findCachedLogs,
+  findCachedRcid, listSnapshots, localStamp, messageTemplate, openSnapshot, readLhub,
+  readLhubHeader, snapshotFiles, fetchWindowMs, startExport, timeWindows, uncompact,
 } from '../ai-context/index.js';
+import { compact } from '../ai-context/model.js';
 import { KEY, entry, hour, jsonl, meta } from './helpers.js';
 
 const read = (dir: string, file: string) => readLhub(join(dir, file), KEY).text;
@@ -250,4 +252,55 @@ test('INDEX.md drops lines of export folders that were deleted', () => {
   const index = readFileSync(join(base, 'INDEX.md'), 'utf8');
   assert.equal((index.match(/^- /gm) ?? []).length, 2);
   assert.ok(!index.includes(old.snapshot) && index.includes(kept.snapshot));
+});
+
+test('uncompact reconstructs a LogEntry from a compact JSONL record', () => {
+  const original = entry('2026-10-07T09:10:00Z', 'Error', 'Shop.Api', 'Order failed', { rcid: 'r1', tenant: 't1' });
+  const compacted = compact(original);
+  const reconstructed = uncompact(compacted);
+  assert.equal(reconstructed.timestamp, original.timestamp);
+  assert.equal(reconstructed.level, original.level);
+  assert.equal(reconstructed.service, original.service);
+  assert.equal(reconstructed.message, original.message);
+  assert.equal(reconstructed.metadata?.rcid, 'r1');
+  assert.equal(reconstructed.metadata?.tenant, 't1');
+});
+
+test('findCachedRcid, findCachedLogs, cloneLogsToAiContext, and cloneRcidToAiContext', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ai-context-cache-'));
+  const entries = [
+    entry('2026-10-07T09:10:00Z', 'Error', 'Shop.Api', 'Order failed', { rcid: 'rcid-999', tenant: 't1' }),
+    entry('2026-10-07T09:20:00Z', 'Information', 'Shop.Api', 'Order retry', { rcid: 'rcid-999' }),
+  ];
+
+  // Test cloneLogsToAiContext
+  const snap = cloneLogsToAiContext(meta(9, 10), KEY, entries, base);
+  assert.ok(snap);
+
+  // Test findCachedLogs - cache hit
+  const hit = findCachedLogs({ stream: 'shop', service: 'Shop.Api', from: hour(9), to: hour(10) }, KEY, base);
+  assert.ok(hit);
+  assert.equal(hit.length, 2);
+  assert.equal(hit[0]?.message, 'Order retry'); // newest first
+
+  // Test findCachedLogs - level filter
+  const errorOnly = findCachedLogs({ stream: 'shop', service: 'Shop.Api', levels: ['Error'], from: hour(9), to: hour(10) }, KEY, base);
+  assert.ok(errorOnly);
+  assert.equal(errorOnly.length, 1);
+  assert.equal(errorOnly[0]?.level, 'Error');
+
+  // Test findCachedLogs - cache miss (time outside snapshot)
+  const miss = findCachedLogs({ stream: 'shop', from: hour(7), to: hour(8) }, KEY, base);
+  assert.equal(miss, undefined);
+
+  // Test cloneRcidToAiContext and findCachedRcid
+  const rcidSnap = cloneRcidToAiContext(meta(9, 10), KEY, 'rcid-999', 'rcid', entries, base);
+  assert.ok(rcidSnap);
+
+  const rcidHit = findCachedRcid('shop', 'rcid-999', KEY, base);
+  assert.ok(rcidHit);
+  assert.equal(rcidHit.length, 2);
+
+  const rcidMiss = findCachedRcid('shop', 'non-existent-rcid', KEY, base);
+  assert.equal(rcidMiss, undefined);
 });

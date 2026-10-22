@@ -282,3 +282,58 @@ test('fetches request flows in batched queries on every id field and drops empty
     ids: Array.from({ length: 120 }, (_, i) => ({ field: 'rcid', value: `r${i}` })) });
   assert.equal(new Set(many.sqls).size, 3, '50 ids per query');
 });
+
+test('listServices handles empty stream schema without throwing', async () => {
+  const { provider } = setup([
+    org,
+    { list: [{ name: 'empty_stream' }] },
+    { name: 'empty_stream', schema: [] },
+  ]);
+  const res = await provider.listServices({ organization: 'org-id', stream: 'empty_stream' });
+  assert.deepEqual(res, { field: '', services: [] });
+});
+
+test('findByRcid caches results in ai-context and returns from cache on subsequent calls', async () => {
+  const rows = [{ _timestamp: Date.parse('2026-10-07T09:10:00Z') * 1000, rcid: 'rcid-test-1', message: 'req failed' }];
+  const { provider, calls } = setup([
+    org,
+    { list: [{ name: 's' }] },
+    { hits: rows },
+    org,
+  ]);
+  // 1st call: cache miss -> queries remote & clones to ai-context
+  const logs1 = await provider.findByRcid({ organization: 'org-id', stream: 's', field: 'rcid', rcid: 'rcid-test-1', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z' });
+  assert.equal(logs1.length, 1);
+  assert.equal(logs1[0]?.message, 'req failed');
+
+  // 2nd call: cache hit -> reads from ai-context, NO new remote query!
+  const callCountBefore = calls.length;
+  const logs2 = await provider.findByRcid({ organization: 'org-id', stream: 's', field: 'rcid', rcid: 'rcid-test-1', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z' });
+  assert.equal(logs2.length, 1);
+  assert.equal(logs2[0]?.message, 'req failed');
+  assert.equal(calls.length, callCountBefore, 'no additional remote call made on cache hit');
+});
+
+test('searchServiceLogs caches results in ai-context and returns from cache on subsequent calls', async () => {
+  const rows = [
+    { _timestamp: Date.parse('2026-10-07T09:15:00Z') * 1000, service_name: 'Shop.Api', level: 'Error', message: 'err msg' },
+  ];
+  const { provider, calls } = setup([
+    org,
+    { list: [{ name: 's' }] },
+    { name: 's', schema: SCHEMA.map((n) => ({ name: n, type: 'Utf8' })) },
+    { hits: rows },
+    org,
+  ]);
+  const query = { organization: 'org-id', stream: 's', service: 'Shop.Api', from: '2026-10-07T09:00:00Z', to: '2026-10-07T10:00:00Z' };
+  // 1st call: cache miss -> queries remote & clones
+  const logs1 = await provider.searchServiceLogs(query);
+  assert.equal(logs1.length, 1);
+
+  // 2nd call: cache hit -> reads from ai-context
+  const callCountBefore = calls.length;
+  const logs2 = await provider.searchServiceLogs(query);
+  assert.equal(logs2.length, 1);
+  assert.equal(logs2[0]?.message, 'err msg');
+  assert.equal(calls.length, callCountBefore, 'no additional remote call made on cache hit');
+});
